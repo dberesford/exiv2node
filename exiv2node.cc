@@ -17,6 +17,9 @@ using namespace v8;
 static const std::string EXIF_IMAGE_DATETIME = "Exif.Image.DateTime";
 static const std::string EXIF_PHOTO_DATEIMTEORIGINAL = "Exif.Photo.DateTimeOriginal";
 
+#define DEBUGMODE 1
+#define debug_printf(...) do {if(DEBUGMODE)printf(__VA_ARGS__);} while (0)
+
 class Exiv2Node: ObjectWrap
 {
 private:
@@ -58,6 +61,7 @@ public:
 
   struct exiv2node_baton_t {
     Exiv2Node *exiv2node;
+    Exiv2::Image::AutoPtr image;
     int increment_by;
     int sleep_for;
     Persistent<Function> cb;
@@ -107,14 +111,27 @@ public:
     baton->exiv2node->m_count += baton->increment_by;
 
     /* EXIV stuff here.. */
-    /* Get our image metadata */
     String::AsciiValue val(baton->fname);
     std::string name(*val);
-    Exiv2::Image::AutoPtr image = Exiv2::ImageFactory::open(name);
-    image->readMetadata();
-    Exiv2::ExifData &exifData = image->exifData();
+    baton->image = Exiv2::ImageFactory::open(name);
+    baton->image->readMetadata();
 
-    /* Look for our datatime stamp */
+    return 0;
+  }
+
+  static int EIO_AfterImageDateTime(eio_req *req)
+  {
+    HandleScope scope;
+    exiv2node_baton_t *baton = static_cast<exiv2node_baton_t *>(req->data);
+    ev_unref(EV_DEFAULT_UC);
+    baton->exiv2node->Unref();
+
+
+    // TODO - don't forget to free...
+    Exiv2::ExifData &exifData = baton->image->exifData();
+
+    /* TODO - replace with dynamic struct.. Look for our datatime stamp */
+    debug_printf("here.. ");
     if (exifData.empty() == false)
     {
         std::string *key = (std::string*)&EXIF_PHOTO_DATEIMTEORIGINAL;
@@ -132,15 +149,19 @@ public:
             baton->dateTime = new std::string(exifData[*key].value().toString());
         }
     }
-    return 0;
-  }
 
-  static int EIO_AfterImageDateTime(eio_req *req)
-  {
-    HandleScope scope;
-    exiv2node_baton_t *baton = static_cast<exiv2node_baton_t *>(req->data);
-    ev_unref(EV_DEFAULT_UC);
-    baton->exiv2node->Unref();
+    if (exifData.empty()) {
+		// TODO
+	}
+
+	Exiv2::ExifData::const_iterator end = exifData.end();
+	for (Exiv2::ExifData::const_iterator i = exifData.begin(); i != end; ++i) {
+
+		debug_printf("\nkey: %s value: %s", i->key().c_str(), i->value().toString().c_str());
+
+
+	}
+
 
     Local<Value> argv[1];
 
