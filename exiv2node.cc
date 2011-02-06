@@ -1,8 +1,3 @@
-/* This code is PUBLIC DOMAIN, and is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND. See the accompanying 
- * LICENSE file.
- */
-
 #include <v8.h>
 #include <node.h>
 #include <unistd.h>
@@ -10,21 +5,15 @@
 #include <exiv2/image.hpp>
 #include <exiv2/exif.hpp>
 
-using namespace std;
 using namespace node;
 using namespace v8;
-
-static const std::string EXIF_IMAGE_DATETIME = "Exif.Image.DateTime";
-static const std::string EXIF_PHOTO_DATEIMTEORIGINAL = "Exif.Photo.DateTimeOriginal";
 
 #define DEBUGMODE 1
 #define debug_printf(...) do {if(DEBUGMODE)printf(__VA_ARGS__);} while (0)
 
 class Exiv2Node: ObjectWrap
 {
-private:
-  int m_count;
-public:
+  public:
 
   static Persistent<FunctionTemplate> s_ct;
   static void Init(Handle<Object> target)
@@ -37,13 +26,11 @@ public:
     s_ct->InstanceTemplate()->SetInternalFieldCount(1);
     s_ct->SetClassName(String::NewSymbol("Exiv2Node"));
 
-    NODE_SET_PROTOTYPE_METHOD(s_ct, "imageDateTime", ImageDateTime);
-
+    NODE_SET_PROTOTYPE_METHOD(s_ct, "getImageTags", ImageTags);
     target->Set(String::NewSymbol("Exiv2Node"), s_ct->GetFunction());
   }
 
-  Exiv2Node() :
-    m_count(0)
+  Exiv2Node()
   {
   }
 
@@ -59,127 +46,85 @@ public:
     return args.This();
   }
 
-  struct exiv2node_baton_t {
+  /* structure for passing our various objects around libeio */
+  struct exiv2node_thread_data_t {
     Exiv2Node *exiv2node;
     Exiv2::Image::AutoPtr image;
-    int increment_by;
-    int sleep_for;
     Persistent<Function> cb;
-    Persistent<String> fname;
-    std::string *dateTime;
+    std::string fileName;
   };
 
-  static Handle<Value> ImageDateTime(const Arguments& args)
+  static Handle<Value> ImageTags(const Arguments& args)
   {
     HandleScope scope;
 
     /* Usage arguments */
     if (args.Length() <= (1) || !args[1]->IsFunction())
       return ThrowException(Exception::TypeError(String::New("Usage: <filename> <callback function>")));
-    Local<String> fname = Local<String>::Cast(args[0]);
+
+    Local<String> fileName = Local<String>::Cast(args[0]);
     Local<Function> cb = Local<Function>::Cast(args[1]);
 
     Exiv2Node* exiv2node = ObjectWrap::Unwrap<Exiv2Node>(args.This());
 
-    exiv2node_baton_t *baton = new exiv2node_baton_t();
-    baton->exiv2node = exiv2node;
-    baton->increment_by = 2;
-    baton->sleep_for = 1;
-    baton->cb = Persistent<Function>::New(cb);    
-    baton->fname = Persistent<String>::New(fname);
+    /* Set up our thread data struct, pass off to the libeio thread pool */
+    exiv2node_thread_data_t *thread_data = new exiv2node_thread_data_t();
+    thread_data->exiv2node = exiv2node;
+    thread_data->cb = Persistent<Function>::New(cb);
+    thread_data->fileName = std::string(*String::AsciiValue(fileName));
 
     exiv2node->Ref();
-
-    eio_custom(EIO_ImageDateTime, EIO_PRI_DEFAULT, EIO_AfterImageDateTime, baton);
+    eio_custom(ImageTagsWorker, EIO_PRI_DEFAULT, AfterImageTags, thread_data);
     ev_ref(EV_DEFAULT_UC);
 
     return Undefined();
   }
 
-
-  static bool hasKey(Exiv2::ExifData &data, const std::string key)
+  static int ImageTagsWorker(eio_req *req)
   {
-    Exiv2::ExifData::iterator pos = data.findKey(Exiv2::ExifKey(key));
-    return (pos != data.end());
-  }
+    exiv2node_thread_data_t *thread_data = static_cast<exiv2node_thread_data_t *>(req->data);
 
-  static int EIO_ImageDateTime(eio_req *req)
-  {
-    exiv2node_baton_t *baton = static_cast<exiv2node_baton_t *>(req->data);
-
-    sleep(baton->sleep_for);
-    baton->exiv2node->m_count += baton->increment_by;
-
-    /* EXIV stuff here.. */
-    String::AsciiValue val(baton->fname);
-    std::string name(*val);
-    baton->image = Exiv2::ImageFactory::open(name);
-    baton->image->readMetadata();
+    /* Exiv2 processing of the file.. */
+    thread_data->image = Exiv2::ImageFactory::open(thread_data->fileName);
+    thread_data->image->readMetadata();
 
     return 0;
   }
 
-  static int EIO_AfterImageDateTime(eio_req *req)
+  /* Thread complete callback.. */
+  static int AfterImageTags(eio_req *req)
   {
     HandleScope scope;
-    exiv2node_baton_t *baton = static_cast<exiv2node_baton_t *>(req->data);
+    exiv2node_thread_data_t *thread_data = static_cast<exiv2node_thread_data_t *>(req->data);
     ev_unref(EV_DEFAULT_UC);
-    baton->exiv2node->Unref();
+    thread_data->exiv2node->Unref();
 
-
-    // TODO - don't forget to free...
-    Exiv2::ExifData &exifData = baton->image->exifData();
-
-    /* TODO - replace with dynamic struct.. Look for our datatime stamp */
-    debug_printf("here.. ");
-    if (exifData.empty() == false)
-    {
-        std::string *key = (std::string*)&EXIF_PHOTO_DATEIMTEORIGINAL;
-        if (!hasKey(exifData, *key))
-        {
-            key = (std::string*)&EXIF_IMAGE_DATETIME;
-            if (!hasKey(exifData, *key))
-            {
-                key = NULL;
-            }
-        }
-
-        if (key != NULL)
-        {
-            baton->dateTime = new std::string(exifData[*key].value().toString());
-        }
-    }
-
-    if (exifData.empty()) {
-		// TODO
-	}
-
-	Exiv2::ExifData::const_iterator end = exifData.end();
-	for (Exiv2::ExifData::const_iterator i = exifData.begin(); i != end; ++i) {
-
-		debug_printf("\nkey: %s value: %s", i->key().c_str(), i->value().toString().c_str());
-
-
-	}
-
-
+    Exiv2::ExifData &exifData = thread_data->image->exifData();
     Local<Value> argv[1];
 
-    //argv[0] = baton->fname->ToString();
-    argv[0] = String::New(baton->dateTime->c_str());
+    /* Create a V8 array with all the image tags and their corresponding values */
+    if (exifData.empty() == false) {
+		Local<Array> tags = Array::New();
+    	Exiv2::ExifData::const_iterator end = exifData.end();
+		for (Exiv2::ExifData::const_iterator i = exifData.begin(); i != end; ++i) {
+			tags->Set(String::New(i->key().c_str()), String::New(i->value().toString().c_str()));
+		}
+		argv[0] = tags;
+	}else {
+		argv[0] = Local<Value>::New(Null());
+	}
 
+    /* Pass the argv array object to our callback function */
     TryCatch try_catch;
-
-    baton->cb->Call(Context::GetCurrent()->Global(), 1, argv);
-
+    thread_data->cb->Call(Context::GetCurrent()->Global(), 1, argv);
     if (try_catch.HasCaught()) {
       FatalException(try_catch);
     }
 
-    baton->cb.Dispose();
-    baton->fname.Dispose();
+    thread_data->cb.Dispose();
 
-    delete baton;
+    // Assuming std::auto_ptr does its job here and Exiv2::Image::AutoPtr is destroyed when it goes out of scope here..
+    delete thread_data;
     return 0;
   }
 
