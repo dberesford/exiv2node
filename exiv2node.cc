@@ -50,6 +50,7 @@ public:
     Persistent<Function> cb;
     std::string fileName;
     Persistent<Object> tags;
+    std::string setImageTagsError;
   };
 
   static Handle<Value> GetImageTags(const Arguments& args) {
@@ -125,8 +126,6 @@ public:
 
   /* Set Image Tag support.. */
 
-  // TODO
-
   static Handle<Value> SetImageTags(const Arguments& args) {
     HandleScope scope;
 
@@ -162,19 +161,28 @@ public:
   static int SetImageTagsWorker(eio_req *req) {
     exiv2node_thread_data_t *thread_data = static_cast<exiv2node_thread_data_t*> (req->data);
 
-    /* Exiv2 processing of the file.. */
-    thread_data->image = Exiv2::ImageFactory::open(thread_data->fileName);
-    thread_data->image->readMetadata();
+    /* Read existing metadata.. TODO: also handle IPTC and XMP data here.. */
+    try {
+      thread_data->image = Exiv2::ImageFactory::open(thread_data->fileName);
+      thread_data->image->readMetadata();
+      Exiv2::ExifData &exifData = thread_data->image->exifData();
 
-    // TODO - first check image has properties being set, then set them..
-    Local<Array> keys = thread_data->tags->GetPropertyNames();
-    for (unsigned i = 0; i < keys->Length(); i++) {
-      Handle<v8::Value> key = keys->Get(i);
-      std::string name = ValueAsUtf8String(key);
-      std::string value = ValueAsUtf8String(thread_data->tags->Get(key));
-      printf("\nkey: %s value: %s\n", name.c_str(), value.c_str());
+      Local<Array> keys = thread_data->tags->GetPropertyNames();
+      for (unsigned i = 0; i < keys->Length(); i++) {
+        Handle<v8::Value> key = keys->Get(i);
+        std::string name = ValueAsUtf8String(key);
+        std::string value = ValueAsUtf8String(thread_data->tags->Get(key));
+
+        Exiv2::Exifdatum& tag = exifData[name];
+        tag.setValue(value);
+      }
+
+      /* Write the Exif data to the image file */
+      thread_data->image->setExifData(exifData);
+      thread_data->image->writeMetadata();
+    } catch (Exiv2::AnyError& e) {
+      thread_data->setImageTagsError = std::string(e.what());
     }
-
     return 0;
   }
 
@@ -185,19 +193,13 @@ public:
     ev_unref( EV_DEFAULT_UC);
     thread_data->exiv2node->Unref();
 
-    Exiv2::ExifData &exifData = thread_data->image->exifData();
     Local<Value> argv[1];
 
     /* Create a V8 array with all the image tags and their corresponding values */
-    if (exifData.empty() == false) {
-      Local<Array> tags = Array::New();
-      Exiv2::ExifData::const_iterator end = exifData.end();
-      for (Exiv2::ExifData::const_iterator i = exifData.begin(); i != end; ++i) {
-        tags->Set(String::New(i->key().c_str()), String::New(i->value().toString().c_str()));
-      }
-      argv[0] = tags;
-    } else {
+    if (thread_data->setImageTagsError.empty()) {
       argv[0] = Local<Value>::New(Null());
+    } else {
+      argv[0] = Local<String>::New(String::New(thread_data->setImageTagsError.c_str()));
     }
 
     /* Pass the argv array object to our callback function */
