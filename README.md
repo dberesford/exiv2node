@@ -15,28 +15,28 @@ Needs Exiv2, see http://www.exiv2.org/download.html.
 
 ## Sample Usage
 
-  var exiv2node = require('exiv2node');
-
-  ex.getImageTags('./photo.jpg', function(err, tags) {
-   if (err) {
-     console.log(err);
-   }else {	
-    for (key in tags){
-     console.log(key + ":" + tags[key]);
-    }
-  	
-    console.log("DateTime: " + tags["Exif.Image.DateTime"]);
-    console.log("DateTimeOriginal: " + tags["Exif.Photo.DateTimeOriginal"]);
-   }
-  });
+    var exiv2node = require('exiv2node');
   
-  ex.setImageTags('./photo.jpg', { "Exif.Photo.UserComment" : "Some Comment..", "Exif.Canon.OwnerName" : "My Camera"}, function(err){    
-    if (err) {
-      console.log(err);
-    }else {
-      console.log("setImageTags complete..");
-    }
-  });
+    ex.getImageTags('./photo.jpg', function(err, tags) {
+     if (err) {
+       console.log(err);
+     }else {	
+      for (key in tags){
+       console.log(key + ":" + tags[key]);
+      }
+    	
+      console.log("DateTime: " + tags["Exif.Image.DateTime"]);
+      console.log("DateTimeOriginal: " + tags["Exif.Photo.DateTimeOriginal"]);
+     }
+    });
+    
+    ex.setImageTags('./photo.jpg', { "Exif.Photo.UserComment" : "Some Comment..", "Exif.Canon.OwnerName" : "My Camera"}, function(err){    
+      if (err) {
+        console.log(err);
+      }else {
+        console.log("setImageTags complete..");
+      }
+    });
 
 See test.js.
 
