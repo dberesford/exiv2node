@@ -1,5 +1,6 @@
 #include <v8.h>
 #include <node.h>
+#include <node_version.h>
 #include <unistd.h>
 #include <string>
 #include <exiv2/image.hpp>
@@ -73,7 +74,11 @@ public:
     thread_data->exifException = std::string();
 
     exiv2node->Ref();
-    eio_custom(GetImageTagsWorker, EIO_PRI_DEFAULT, AfterGetImageTags, thread_data);
+    #if NODE_VERSION_AT_LEAST(0, 5, 4)
+      eio_custom((void (*)(eio_req*))GetImageTagsWorker, EIO_PRI_DEFAULT, AfterGetImageTags, thread_data);
+    #else
+      eio_custom(GetImageTagsWorker, EIO_PRI_DEFAULT, AfterGetImageTags, thread_data);
+    #endif
     ev_ref( EV_DEFAULT_UC);
 
     return Undefined();
@@ -158,7 +163,11 @@ public:
     thread_data->exifException = std::string();
 
     exiv2node->Ref();
-    eio_custom(SetImageTagsWorker, EIO_PRI_DEFAULT, AfterSetImageTags, thread_data);
+    #if NODE_VERSION_AT_LEAST(0, 5, 4)
+      eio_custom((void (*)(eio_req*))SetImageTagsWorker, EIO_PRI_DEFAULT, AfterSetImageTags, thread_data);
+    #else
+      eio_custom(SetImageTagsWorker, EIO_PRI_DEFAULT, AfterSetImageTags, thread_data);
+    #endif
     ev_ref( EV_DEFAULT_UC);
 
     return Undefined();
