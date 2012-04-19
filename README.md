@@ -7,11 +7,16 @@ Exiv2Node is a native c++ extension for node.js that provides asynchronous suppo
 
 Needs Exiv2, see http://www.exiv2.org/download.html.
 
-## Build Instructions
+## Installation Instructions
 
- - Download source
- - node-waf configure && node-waf build
- - node-waf install
+Install the library and headers using package manager appropriate to your system:
+
+  - Debian: `apt-get install libexiv2 libexiv2-dev`
+  - OS X: `port install exiv2`
+
+Install the module with npm:
+
+    npm install exiv2
 
 ## Sample Usage
 
