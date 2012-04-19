@@ -1,0 +1,22 @@
+{
+  "author": "Damian Beresford <dberesford@gmail.com> (http://www.damianberesford.com/)",
+  "name": "exiv2",
+  "description": "A native c++ extension for node.js that provides asynchronous support for reading & writing image metadata via Exiv2 .",
+  "version": "0.0.1",
+  "homepage": "https://github.com/dberesford/exiv2node",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/dberesford/exiv2node.git"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "optionalDependencies": {},
+  "engines": {
+    "node": "*"
+  },
+  "main": "exiv2node.node",
+  "scripts": {
+    "install" : "node-waf install",
+    "preuninstall": "rm -rf build/*"
+  }
+}
