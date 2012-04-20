@@ -3,6 +3,7 @@
 #include <node_version.h>
 #include <unistd.h>
 #include <string>
+#include <map>
 #include <exiv2/image.hpp>
 #include <exiv2/exif.hpp>
 
@@ -14,7 +15,6 @@ using namespace v8;
 
 class Exiv2Node: ObjectWrap {
 public:
-
   static Persistent<FunctionTemplate> s_ct;
   static void Init(Handle<Object> target) {
     HandleScope scope;
@@ -45,12 +45,13 @@ public:
   }
 
   /* structure for passing our various objects around libeio */
+  typedef std::map<std::string, std::string> tag_map_t;
   struct exiv2node_thread_data_t {
     Exiv2Node *exiv2node;
     Exiv2::Image::AutoPtr image;
     Persistent<Function> cb;
     std::string fileName;
-    Persistent<Object> tags;
+    tag_map_t *tags;
     std::string exifException;
   };
 
@@ -159,8 +160,17 @@ public:
     thread_data->exiv2node = exiv2node;
     thread_data->cb = Persistent<Function>::New(cb);
     thread_data->fileName = std::string(*String::AsciiValue(fileName));
-    thread_data->tags = Persistent<Object>::New(tags);
     thread_data->exifException = std::string();
+    thread_data->tags = new tag_map_t();
+
+    Local<Array> keys = tags->GetPropertyNames();
+    for (unsigned i = 0; i < keys->Length(); i++) {
+      Handle<v8::Value> key = keys->Get(i);
+      thread_data->tags->insert(std::pair<std::string, std::string> (
+        *String::AsciiValue(key),
+        *String::AsciiValue(tags->Get(key)))
+      );
+    }
 
     exiv2node->Ref();
     #if NODE_VERSION_AT_LEAST(0, 5, 4)
@@ -182,11 +192,9 @@ public:
       thread_data->image->readMetadata();
       Exiv2::ExifData &exifData = thread_data->image->exifData();
 
-      Local<Array> keys = thread_data->tags->GetPropertyNames();
-      for (unsigned i = 0; i < keys->Length(); i++) {
-        Handle<v8::Value> key = keys->Get(i);
-        Exiv2::Exifdatum& tag = exifData[*String::AsciiValue(key)];
-        tag.setValue(*String::AsciiValue(thread_data->tags->Get(key)));
+      // Assign the tags.
+      for (tag_map_t::iterator i = thread_data->tags->begin(); i != thread_data->tags->end(); ++i) {
+        exifData[i->first].setValue(i->second);
       }
 
       /* Write the Exif data to the image file */
@@ -222,6 +230,7 @@ public:
     }
 
     thread_data->cb.Dispose();
+    delete thread_data->tags;
 
     // Assuming std::auto_ptr does its job here and Exiv2::Image::AutoPtr is destroyed when it goes out of scope here..
     delete thread_data;
@@ -233,9 +242,8 @@ public:
 Persistent<FunctionTemplate> Exiv2Node::s_ct;
 
 extern "C" {
-static void init(Handle<Object> target) {
-  Exiv2Node::Init(target);
-}
-NODE_MODULE(exiv2node, init)
-;
+  static void init(Handle<Object> target) {
+    Exiv2Node::Init(target);
+  }
+  NODE_MODULE(exiv2node, init);
 }
