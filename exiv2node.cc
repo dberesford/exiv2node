@@ -1,6 +1,5 @@
 #include <v8.h>
 #include <node.h>
-#include <node_version.h>
 #include <unistd.h>
 #include <string>
 #include <map>
@@ -44,9 +43,10 @@ public:
     return args.This();
   }
 
-  /* structure for passing our various objects around libeio */
+  /* structure for passing our various objects around libuv */
   typedef std::map<std::string, std::string> tag_map_t;
   struct exiv2node_thread_data_t {
+    uv_work_t request;
     Exiv2Node *exiv2node;
     Exiv2::Image::AutoPtr image;
     Persistent<Function> cb;
@@ -67,25 +67,23 @@ public:
 
     Exiv2Node* exiv2node = ObjectWrap::Unwrap<Exiv2Node>(args.This());
 
-    /* Set up our thread data struct, pass off to the libeio thread pool */
+    /* Set up our thread data struct, pass off to the libuv thread pool */
     exiv2node_thread_data_t *thread_data = new exiv2node_thread_data_t();
+    thread_data->request.data = thread_data;
     thread_data->exiv2node = exiv2node;
     thread_data->cb = Persistent<Function>::New(cb);
     thread_data->fileName = std::string(*String::AsciiValue(fileName));
     thread_data->exifException = std::string();
 
     exiv2node->Ref();
-    #if NODE_VERSION_AT_LEAST(0, 5, 4)
-      eio_custom((void (*)(eio_req*))GetImageTagsWorker, EIO_PRI_DEFAULT, AfterGetImageTags, thread_data);
-    #else
-      eio_custom(GetImageTagsWorker, EIO_PRI_DEFAULT, AfterGetImageTags, thread_data);
-    #endif
-    ev_ref( EV_DEFAULT_UC);
+    uv_ref(uv_default_loop());
+    int status = uv_queue_work(uv_default_loop(), &thread_data->request, GetImageTagsWorker, AfterGetImageTags);
+    assert(status == 0);
 
     return Undefined();
   }
 
-  static int GetImageTagsWorker(eio_req *req) {
+  static void GetImageTagsWorker(uv_work_t* req) {
     exiv2node_thread_data_t *thread_data = static_cast<exiv2node_thread_data_t *> (req->data);
 
     /* Exiv2 processing of the file.. */
@@ -95,14 +93,13 @@ public:
     } catch (Exiv2::AnyError& e) {
       thread_data->exifException.append(e.what());
     }
-    return 0;
   }
 
   /* Thread complete callback.. */
-  static int AfterGetImageTags(eio_req *req) {
+  static void AfterGetImageTags(uv_work_t* req) {
     HandleScope scope;
     exiv2node_thread_data_t *thread_data = static_cast<exiv2node_thread_data_t *> (req->data);
-    ev_unref( EV_DEFAULT_UC);
+    uv_unref(uv_default_loop());
     thread_data->exiv2node->Unref();
 
     Local<Value> argv[2];
@@ -137,7 +134,6 @@ public:
 
     // Assuming std::auto_ptr does its job here and Exiv2::Image::AutoPtr is destroyed when it goes out of scope here..
     delete thread_data;
-    return 0;
   }
 
   /* Set Image Tag support.. */
@@ -155,8 +151,9 @@ public:
 
     Exiv2Node* exiv2node = ObjectWrap::Unwrap<Exiv2Node>(args.This());
 
-    /* Set up our thread data struct, pass off to the libeio thread pool */
+    /* Set up our thread data struct, pass off to the libuv thread pool */
     exiv2node_thread_data_t *thread_data = new exiv2node_thread_data_t();
+    thread_data->request.data = thread_data;
     thread_data->exiv2node = exiv2node;
     thread_data->cb = Persistent<Function>::New(cb);
     thread_data->fileName = std::string(*String::AsciiValue(fileName));
@@ -173,17 +170,14 @@ public:
     }
 
     exiv2node->Ref();
-    #if NODE_VERSION_AT_LEAST(0, 5, 4)
-      eio_custom((void (*)(eio_req*))SetImageTagsWorker, EIO_PRI_DEFAULT, AfterSetImageTags, thread_data);
-    #else
-      eio_custom(SetImageTagsWorker, EIO_PRI_DEFAULT, AfterSetImageTags, thread_data);
-    #endif
-    ev_ref( EV_DEFAULT_UC);
+    uv_ref(uv_default_loop());
+    int status = uv_queue_work(uv_default_loop(), &thread_data->request, SetImageTagsWorker, AfterSetImageTags);
+    assert(status == 0);
 
     return Undefined();
   }
 
-  static int SetImageTagsWorker(eio_req *req) {
+  static void SetImageTagsWorker(uv_work_t *req) {
     exiv2node_thread_data_t *thread_data = static_cast<exiv2node_thread_data_t*> (req->data);
 
     /* Read existing metadata.. TODO: also handle IPTC and XMP data here.. */
@@ -203,14 +197,13 @@ public:
     } catch (Exiv2::AnyError& e) {
       thread_data->exifException.append(e.what());
     }
-    return 0;
   }
 
   /* Thread complete callback.. */
-  static int AfterSetImageTags(eio_req *req) {
+  static void AfterSetImageTags(uv_work_t *req) {
     HandleScope scope;
     exiv2node_thread_data_t *thread_data = static_cast<exiv2node_thread_data_t*> (req->data);
-    ev_unref( EV_DEFAULT_UC);
+    uv_unref(uv_default_loop());
     thread_data->exiv2node->Unref();
 
     Local<Value> argv[1];
@@ -232,9 +225,9 @@ public:
     thread_data->cb.Dispose();
     delete thread_data->tags;
 
-    // Assuming std::auto_ptr does its job here and Exiv2::Image::AutoPtr is destroyed when it goes out of scope here..
+    // Assuming std::auto_ptr does it's job here and Exiv2::Image::AutoPtr is
+    // destroyed when it goes out of scope here..
     delete thread_data;
-    return 0;
   }
 
 };
