@@ -53,6 +53,24 @@ public:
     std::string fileName;
     tag_map_t *tags;
     std::string exifException;
+
+    exiv2node_thread_data_t(Exiv2Node* en_, Local<String> fn_, Handle<Function> cb_) : exiv2node(en_) {
+      uv_ref(uv_default_loop());
+      request.data = this;
+      exiv2node->Ref();
+      cb = Persistent<Function>::New(cb_);
+      fileName = std::string(*String::AsciiValue(fn_));
+      tags = new tag_map_t();
+      exifException = std::string();
+    }
+    virtual ~exiv2node_thread_data_t() {
+      uv_unref(uv_default_loop());
+      exiv2node->Unref();
+      cb.Dispose();
+      delete tags;
+      // Assuming std::auto_ptr does it's job here and Exiv2::Image::AutoPtr is
+      // destroyed when it goes out of scope here..
+    }
   };
 
   static Handle<Value> GetImageTags(const Arguments& args) {
@@ -68,15 +86,8 @@ public:
     Exiv2Node* exiv2node = ObjectWrap::Unwrap<Exiv2Node>(args.This());
 
     /* Set up our thread data struct, pass off to the libuv thread pool */
-    exiv2node_thread_data_t *thread_data = new exiv2node_thread_data_t();
-    thread_data->request.data = thread_data;
-    thread_data->exiv2node = exiv2node;
-    thread_data->cb = Persistent<Function>::New(cb);
-    thread_data->fileName = std::string(*String::AsciiValue(fileName));
-    thread_data->exifException = std::string();
+    exiv2node_thread_data_t *thread_data = new exiv2node_thread_data_t(exiv2node, fileName, cb);
 
-    exiv2node->Ref();
-    uv_ref(uv_default_loop());
     int status = uv_queue_work(uv_default_loop(), &thread_data->request, GetImageTagsWorker, AfterGetImageTags);
     assert(status == 0);
 
@@ -99,8 +110,6 @@ public:
   static void AfterGetImageTags(uv_work_t* req) {
     HandleScope scope;
     exiv2node_thread_data_t *thread_data = static_cast<exiv2node_thread_data_t *> (req->data);
-    uv_unref(uv_default_loop());
-    thread_data->exiv2node->Unref();
 
     Local<Value> argv[2];
     if (!thread_data->exifException.empty()){
@@ -130,9 +139,6 @@ public:
       FatalException(try_catch);
     }
 
-    thread_data->cb.Dispose();
-
-    // Assuming std::auto_ptr does its job here and Exiv2::Image::AutoPtr is destroyed when it goes out of scope here..
     delete thread_data;
   }
 
@@ -152,13 +158,7 @@ public:
     Exiv2Node* exiv2node = ObjectWrap::Unwrap<Exiv2Node>(args.This());
 
     /* Set up our thread data struct, pass off to the libuv thread pool */
-    exiv2node_thread_data_t *thread_data = new exiv2node_thread_data_t();
-    thread_data->request.data = thread_data;
-    thread_data->exiv2node = exiv2node;
-    thread_data->cb = Persistent<Function>::New(cb);
-    thread_data->fileName = std::string(*String::AsciiValue(fileName));
-    thread_data->exifException = std::string();
-    thread_data->tags = new tag_map_t();
+    exiv2node_thread_data_t *thread_data = new exiv2node_thread_data_t(exiv2node, fileName, cb);
 
     Local<Array> keys = tags->GetPropertyNames();
     for (unsigned i = 0; i < keys->Length(); i++) {
@@ -169,8 +169,6 @@ public:
       );
     }
 
-    exiv2node->Ref();
-    uv_ref(uv_default_loop());
     int status = uv_queue_work(uv_default_loop(), &thread_data->request, SetImageTagsWorker, AfterSetImageTags);
     assert(status == 0);
 
@@ -203,8 +201,6 @@ public:
   static void AfterSetImageTags(uv_work_t *req) {
     HandleScope scope;
     exiv2node_thread_data_t *thread_data = static_cast<exiv2node_thread_data_t*> (req->data);
-    uv_unref(uv_default_loop());
-    thread_data->exiv2node->Unref();
 
     Local<Value> argv[1];
 
@@ -222,11 +218,6 @@ public:
       FatalException(try_catch);
     }
 
-    thread_data->cb.Dispose();
-    delete thread_data->tags;
-
-    // Assuming std::auto_ptr does it's job here and Exiv2::Image::AutoPtr is
-    // destroyed when it goes out of scope here..
     delete thread_data;
   }
 
