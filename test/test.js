@@ -4,8 +4,10 @@ var fs = require('fs')
 
 var ex = new exiv2node.Exiv2Node();
 
-/* Test basic image with exif tags */
-ex.getImageTags('./testimages/books.jpg', function(err, tags) {
+var dir = __dirname + '/images';
+
+// Test basic image with exif tags
+ex.getImageTags(dir + '/books.jpg', function(err, tags) {
 	assert.equal(null, err);
 	assert.notEqual(null, tags);
 	
@@ -20,11 +22,11 @@ ex.getImageTags('./testimages/books.jpg', function(err, tags) {
 });
 
 
-/* Set image tags, first make a fresh copy of our test image */
-fs.writeFileSync('./testimages/copy.jpg', fs.readFileSync('./testimages/books.jpg'));
+// Set image tags, first make a fresh copy of our test image
+fs.writeFileSync(dir + '/copy.jpg', fs.readFileSync(dir + '/books.jpg'));
 
-/* Set some tags on the image */
-ex.setImageTags('./testimages/copy.jpg', { "Exif.Photo.UserComment" : "Some books..", "Exif.Canon.OwnerName" : "Damo's camera"}, function(err){
+// Set some tags on the image
+ex.setImageTags(dir + '/copy.jpg', { "Exif.Photo.UserComment" : "Some books..", "Exif.Canon.OwnerName" : "Damo's camera"}, function(err){
 	assert.equal(null, err); 
 	
 	if (err) {
@@ -33,25 +35,24 @@ ex.setImageTags('./testimages/copy.jpg', { "Exif.Photo.UserComment" : "Some book
 		// console.log("setImageTags complete..");
 	}
 
-	/* Check our tags have been set */
-	ex.getImageTags('./testimages/copy.jpg', function(err, tags) {
+	// Check our tags have been set
+	ex.getImageTags(dir + '/copy.jpg', function(err, tags) {
 		assert.equal("Some books..", tags["Exif.Photo.UserComment"]);
 		assert.equal("Damo's camera", tags["Exif.Canon.OwnerName"]);
 	});
 });
 
-/* Test image with no tags */
-ex.getImageTags('./testimages/damien.jpg', function(err, tags) {	
+// Test image with no tags
+ex.getImageTags(dir + '/damien.jpg', function(err, tags) {
 	assert.equal(null, tags);
 });
 
-/* Test non existent files */
-ex.setImageTags('./testimages/idontexist.jpg', { "Exif.Photo.UserComment" : "test"}, function(err){
+// Test non existent files
+ex.setImageTags('idontexist.jpg', { "Exif.Photo.UserComment" : "test"}, function(err){
 	assert.notEqual(null, err);
 	//console.log(err);
 });
-
-ex.getImageTags('./testimages/idontexist.jpg', function(err, tags) {	
+ex.getImageTags('idontexist.jpg', function(err, tags) {
 	assert.notEqual(null, err);
 	//console.log(err);
 });

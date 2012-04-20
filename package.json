@@ -17,6 +17,7 @@
   "main": "exiv2node.node",
   "scripts": {
     "install" : "node-waf install",
-    "preuninstall": "rm -rf build/*"
+    "preuninstall": "rm -rf build/*",
+    "test": "node test/test.js"
   }
 }
