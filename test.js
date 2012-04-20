@@ -1,4 +1,3 @@
-var sys = require('sys');
 var exiv2node = require('exiv2node');
 var assert = require('assert');
 var fs = require('fs')
