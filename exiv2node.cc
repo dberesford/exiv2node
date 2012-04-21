@@ -118,13 +118,14 @@ public:
     } else {
       argv[0] = Local<Value>::New(Null());
 
-      /* Create a V8 array with all the image tags and their corresponding values */
+      // Create a V8 object with all the image tags and their corresponding
+      // values.
       Exiv2::ExifData &exifData = thread_data->image->exifData();
       if (exifData.empty() == false) {
-        Local<Array> tags = Array::New();
+        Local<Object> tags = Object::New();
         Exiv2::ExifData::const_iterator end = exifData.end();
         for (Exiv2::ExifData::const_iterator i = exifData.begin(); i != end; ++i) {
-          tags->Set(String::New(i->key().c_str()), String::New(i->value().toString().c_str()));
+          tags->Set(String::New(i->key().c_str()), String::New(i->value().toString().c_str()), ReadOnly);
         }
         argv[1] = tags;
       } else {
