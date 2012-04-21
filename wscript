@@ -8,15 +8,7 @@ def set_options(opt):
 def configure(conf):
   conf.check_tool("compiler_cxx")
   conf.check_tool("node_addon")
-  conf.check_cfg(package='exiv2')
-
-  pkgconfig = conf.find_program('pkg-config', var='PKGCONFIG', mandatory=True)
-  #exiv2_libdir = popen("%s --libdir exiv2" % pkgconfig).readline().strip()
-  conf.env.append_value("LIBPATH_EXIV2", "/usr/local/lib")
-  conf.env.append_value("LIB_EXIV2", "exiv2")
-
-  exiv2_incdir = popen("%s --cflags exiv2" % pkgconfig).readline().strip()
-  conf.env.append_value("CPPPATH_EXIV2", exiv2_incdir)
+  conf.check_cfg(package='exiv2', args='--cflags --libs')
 
 def build(bld):
   obj = bld.new_task_gen("cxx", "shlib", "node_addon")
