@@ -1,8 +1,6 @@
-var exiv2node = require('exiv2node');
+var ex = require('exiv2node');
 var assert = require('assert');
 var fs = require('fs')
-
-var ex = new exiv2node.Exiv2Node();
 
 var dir = __dirname + '/images';
 
