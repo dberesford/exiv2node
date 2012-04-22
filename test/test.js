@@ -1,57 +1,92 @@
-var ex = require('exiv2node');
-var assert = require('assert');
-var fs = require('fs')
+var exiv = require('exiv2node')
+  , fs = require('fs')
+  , should = require('should')
+  , dir = __dirname + '/images';
 
-var dir = __dirname + '/images';
+describe('exiv2', function(){
+  describe('.getImageTags()', function(){
+    it("should callback with image's tags", function(done) {
+      exiv.getImageTags(dir + '/books.jpg', function(err, tags) {
+        should.not.exist(err);
+        tags.should.be.a('object');
+        tags.should.have.property('Exif.Image.DateTime', '2008:12:16 21:28:36');
+        tags.should.have.property('Exif.Photo.DateTimeOriginal', '2008:12:16 21:28:36');
+        done();
+      })
+    });
 
-// Test basic image with exif tags
-ex.getImageTags(dir + '/books.jpg', function(err, tags) {
-	assert.equal(null, err);
-	assert.notEqual(null, tags);
-	
-	if (tags) {	
-		//console.log("All Tags:");
-		//for (key in tags){
-		//	console.log(key + ":" + tags[key]);
-		//}
-		assert.equal("2008:12:16 21:28:36", tags["Exif.Image.DateTime"]);
-		assert.equal("2008:12:16 21:28:36", tags["Exif.Photo.DateTimeOriginal"]);
-	}
-});
+    it('should callback with null on untagged file', function(done) {
+      exiv.getImageTags(dir + '/damien.jpg', function(err, tags) {
+        should.not.exist(err);
+        should.not.exist(tags);
+        done();
+      })
+    });
 
+    it('should throw if no file path is provided', function() {
+      (function(){
+        exiv.getImageTags()
+      }).should.throw();
+    });
 
-// Set image tags, first make a fresh copy of our test image
-fs.writeFileSync(dir + '/copy.jpg', fs.readFileSync(dir + '/books.jpg'));
+    it('should throw if no callback is provided', function() {
+      (function(){
+        exiv.getImageTags(dir + '/books.jpg')
+      }).should.throw();
+    });
 
-// Set some tags on the image
-ex.setImageTags(dir + '/copy.jpg', { "Exif.Photo.UserComment" : "Some books..", "Exif.Canon.OwnerName" : "Damo's camera"}, function(err){
-	assert.equal(null, err); 
-	
-	if (err) {
-		// console.log(err);
-	}else {
-		// console.log("setImageTags complete..");
-	}
+    it('should report an error on an invalid path', function(done) {
+      exiv.getImageTags('idontexist.jpg', function(err, tags) {
+        should.exist(err);
+        should.not.exist(tags);
+        done();
+      });
+    });
+  });
 
-	// Check our tags have been set
-	ex.getImageTags(dir + '/copy.jpg', function(err, tags) {
-		assert.equal("Some books..", tags["Exif.Photo.UserComment"]);
-		assert.equal("Damo's camera", tags["Exif.Canon.OwnerName"]);
-	});
-});
+  describe('.setImageTags()', function(){
+    var temp = dir + '/copy.jpg';
 
-// Test image with no tags
-ex.getImageTags(dir + '/damien.jpg', function(err, tags) {
-	assert.equal(null, tags);
-});
+    before(function() {
+      fs.writeFileSync(temp, fs.readFileSync(dir + '/books.jpg'));
+    });
+    it('should write tags to image files', function(done) {
+      var tags = {
+        "Exif.Photo.UserComment" : "Some books..",
+        "Exif.Canon.OwnerName" : "Damo's camera"
+      };
+      exiv.setImageTags(temp, tags, function(err){
+        should.not.exist(err);
 
-// Test non existent files
-ex.setImageTags('idontexist.jpg', { "Exif.Photo.UserComment" : "test"}, function(err){
-	assert.notEqual(null, err);
-	//console.log(err);
-});
-ex.getImageTags('idontexist.jpg', function(err, tags) {
-	assert.notEqual(null, err);
-	//console.log(err);
-});
+        exiv.getImageTags(temp, function(err, tags) {
+          tags.should.have.property('Exif.Photo.UserComment', "Some books..");
+          tags.should.have.property('Exif.Canon.OwnerName', "Damo's camera");
+          done();
+        });
+      });
+    })
+    after(function(done) {
+      fs.unlink(temp, done);
+    });
 
+    it('should throw if no file path is provided', function() {
+      (function(){
+        exiv.setImageTags()
+      }).should.throw();
+    });
+
+    it('should throw if no callback is provided', function() {
+      (function(){
+        exiv.setImageTags(dir + '/books.jpg')
+      }).should.throw();
+    });
+
+    it('should report an error on an invalid path', function(done) {
+      exiv.setImageTags('idontexist.jpg', {}, function(err, tags) {
+        should.exist(err);
+        should.not.exist(tags);
+        done();
+      });
+    });
+  });
+})
