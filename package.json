@@ -17,7 +17,7 @@
   "engines": {
     "node": ">= 0.5.6"
   },
-  "main": "exiv2node.node",
+  "main": "exiv2",
   "scripts": {
     "install" : "node-waf configure build install",
     "preuninstall": "rm -rf build/*",

@@ -1,7 +1,7 @@
 
-##Exiv2Node
+##Exiv2
 
-Exiv2Node is a native c++ extension for node.js that provides asynchronous support for reading & writing image metadata via Exiv2 (http://www.exiv2.org).
+Exiv2 is a native c++ extension for node.js that provides asynchronous support for reading & writing image metadata via Exiv2 (http://www.exiv2.org).
 
 ## Dependencies
 

@@ -1,5 +1,4 @@
-
-var exiv = require('exiv2node')
+var exiv = require('exiv2')
   , fs = require('fs')
   , should = require('should')
   , dir = __dirname + '/images';
