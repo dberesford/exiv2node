@@ -189,4 +189,4 @@ void InitAll(Handle<Object> target) {
   target->Set(String::NewSymbol("getImageTags"), FunctionTemplate::New(GetImageTags)->GetFunction());
   target->Set(String::NewSymbol("setImageTags"), FunctionTemplate::New(SetImageTags)->GetFunction());
 }
-NODE_MODULE(exiv2node, InitAll)
+NODE_MODULE(exiv2, InitAll)
