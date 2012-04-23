@@ -41,7 +41,7 @@ Install the module with npm:
       }
     });
 
-See test.js.
+See `example/simple.js`.
 
 email: dberesford at gmail
 twitter: @dberesford
