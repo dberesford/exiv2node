@@ -1,4 +1,4 @@
-var ex = require('exiv2node');
+var ex = require('exiv2');
 var assert = require('assert');
 var fs = require('fs')
 

@@ -13,6 +13,6 @@ def configure(conf):
 def build(bld):
   obj = bld.new_task_gen("cxx", "shlib", "node_addon")
   obj.cxxflags = ["-g", "-D_FILE_OFFSET_BITS=64", "-D_LARGEFILE_SOURCE", "-Wall"]
-  obj.target = "exiv2node"
+  obj.target = "exiv2"
   obj.source = "exiv2node.cc"
   obj.uselib = "EXIV2"

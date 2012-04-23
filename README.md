@@ -20,7 +20,7 @@ Install the module with npm:
 
 ## Sample Usage
 
-    var ex = require('exiv2node');
+    var ex = require('exiv2');
 
     ex.getImageTags('./photo.jpg', function(err, tags) {
      if (err) {
