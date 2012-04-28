@@ -9,30 +9,39 @@
 using namespace node;
 using namespace v8;
 
-/* structure for passing our various objects around libuv */
-typedef std::map<std::string, std::string> tag_map_t;
-struct exiv2node_thread_data_t {
+// Base structure for passing data to and from our libuv workers.
+struct Baton {
   uv_work_t request;
   Exiv2::Image::AutoPtr image;
   Persistent<Function> cb;
   std::string fileName;
-  tag_map_t *tags;
   std::string exifException;
 
-  exiv2node_thread_data_t(Local<String> fn_, Handle<Function> cb_) {
+  Baton(Local<String> fn_, Handle<Function> cb_) {
     uv_ref(uv_default_loop());
     request.data = this;
     cb = Persistent<Function>::New(cb_);
     fileName = std::string(*String::AsciiValue(fn_));
-    tags = new tag_map_t();
     exifException = std::string();
   }
-  virtual ~exiv2node_thread_data_t() {
+  virtual ~Baton() {
     uv_unref(uv_default_loop());
     cb.Dispose();
-    delete tags;
     // Assuming std::auto_ptr does it's job here and Exiv2::Image::AutoPtr is
     // destroyed when it goes out of scope here..
+  }
+};
+
+// For writing tags, we need to copy the strings out of the V8 types since they
+// cannot be read from the other thread.
+typedef std::map<std::string, std::string> tag_map_t;
+struct SetTagsBaton : Baton {
+  tag_map_t *tags;
+  SetTagsBaton(Local<String> fn_, Handle<Function> cb_) : Baton(fn_, cb_) {
+    tags = new tag_map_t();
+  }
+  virtual ~SetTagsBaton() {
+    delete tags;
   }
 };
 
@@ -52,7 +61,7 @@ static Handle<Value> GetImageTags(const Arguments& args) {
   Local<Function> cb = Local<Function>::Cast(args[1]);
 
   /* Set up our thread data struct, pass off to the libuv thread pool */
-  exiv2node_thread_data_t *thread_data = new exiv2node_thread_data_t(fileName, cb);
+  Baton *thread_data = new Baton(fileName, cb);
 
   int status = uv_queue_work(uv_default_loop(), &thread_data->request, GetImageTagsWorker, AfterGetImageTags);
   assert(status == 0);
@@ -61,7 +70,7 @@ static Handle<Value> GetImageTags(const Arguments& args) {
 }
 
 static void GetImageTagsWorker(uv_work_t* req) {
-  exiv2node_thread_data_t *thread_data = static_cast<exiv2node_thread_data_t *> (req->data);
+  Baton *thread_data = static_cast<Baton *> (req->data);
 
   /* Exiv2 processing of the file.. */
   try {
@@ -75,7 +84,7 @@ static void GetImageTagsWorker(uv_work_t* req) {
 /* Thread complete callback.. */
 static void AfterGetImageTags(uv_work_t* req) {
   HandleScope scope;
-  exiv2node_thread_data_t *thread_data = static_cast<exiv2node_thread_data_t *> (req->data);
+  Baton *thread_data = static_cast<Baton *> (req->data);
 
   Local<Value> argv[2];
   if (!thread_data->exifException.empty()){
@@ -141,7 +150,7 @@ static Handle<Value> SetImageTags(const Arguments& args) {
   Local<Function> cb = Local<Function>::Cast(args[2]);
 
   /* Set up our thread data struct, pass off to the libuv thread pool */
-  exiv2node_thread_data_t *thread_data = new exiv2node_thread_data_t(fileName, cb);
+  SetTagsBaton *thread_data = new SetTagsBaton(fileName, cb);
 
   Local<Array> keys = tags->GetPropertyNames();
   for (unsigned i = 0; i < keys->Length(); i++) {
@@ -159,7 +168,7 @@ static Handle<Value> SetImageTags(const Arguments& args) {
 }
 
 static void SetImageTagsWorker(uv_work_t *req) {
-  exiv2node_thread_data_t *thread_data = static_cast<exiv2node_thread_data_t*> (req->data);
+  SetTagsBaton *thread_data = static_cast<SetTagsBaton*> (req->data);
 
   /* Read existing metadata.. TODO: also handle IPTC and XMP data here.. */
   try {
@@ -183,7 +192,7 @@ static void SetImageTagsWorker(uv_work_t *req) {
 /* Thread complete callback.. */
 static void AfterSetImageTags(uv_work_t *req) {
   HandleScope scope;
-  exiv2node_thread_data_t *thread_data = static_cast<exiv2node_thread_data_t*> (req->data);
+  SetTagsBaton *thread_data = static_cast<SetTagsBaton*> (req->data);
 
   Local<Value> argv[1];
 
