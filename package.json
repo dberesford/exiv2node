@@ -19,7 +19,6 @@
   },
   "main": "exiv2",
   "scripts": {
-    "install" : "node-waf configure build install",
     "preuninstall": "rm -rf build/*",
     "test": "mocha"
   }

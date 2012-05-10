@@ -1,8 +1,8 @@
-var ex = require('exiv2');
+var ex = require('../exiv2');
 var assert = require('assert');
 var fs = require('fs')
 
-var dir = __dirname + '../test/images';
+var dir = __dirname + '/../test/images';
 
 // Test basic image with exif tags
 ex.getImageTags(dir + '/books.jpg', function(err, tags) {
