@@ -87,15 +87,34 @@ static void AfterGetImageTags(uv_work_t* req) {
     // Create a V8 object with all the image tags and their corresponding
     // values.
     Exiv2::ExifData &exifData = thread_data->image->exifData();
-    if (exifData.empty() == false) {
+    Exiv2::IptcData &iptcData = thread_data->image->iptcData();
+    Exiv2::XmpData &xmpData = thread_data->image->xmpData();
+
+    argv[1] = Local<Value>::New(Null());
+    if (exifData.empty() == false || iptcData.empty() == false || xmpData.empty() == false) {
       Local<Object> tags = Object::New();
-      Exiv2::ExifData::const_iterator end = exifData.end();
-      for (Exiv2::ExifData::const_iterator i = exifData.begin(); i != end; ++i) {
-        tags->Set(String::New(i->key().c_str()), String::New(i->value().toString().c_str()), ReadOnly);
+
+      if (exifData.empty() == false) {
+        Exiv2::ExifData::const_iterator end = exifData.end();
+        for (Exiv2::ExifData::const_iterator i = exifData.begin(); i != end; ++i) {
+          tags->Set(String::New(i->key().c_str()), String::New(i->value().toString().c_str()), ReadOnly);
+        }
+      }
+
+      if (iptcData.empty() == false) {
+        Exiv2::IptcData::const_iterator end = iptcData.end();
+        for (Exiv2::IptcData::const_iterator i = iptcData.begin(); i != end; ++i) {
+          tags->Set(String::New(i->key().c_str()), String::New(i->value().toString().c_str()), ReadOnly);
+        }
+      }
+
+      if (xmpData.empty() == false) {
+        Exiv2::XmpData::const_iterator end = xmpData.end();
+        for (Exiv2::XmpData::const_iterator i = xmpData.begin(); i != end; ++i) {
+          tags->Set(String::New(i->key().c_str()), String::New(i->value().toString().c_str()), ReadOnly);
+        }
       }
       argv[1] = tags;
-    } else {
-      argv[1] = Local<Value>::New(Null());
     }
   }
 
