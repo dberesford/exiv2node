@@ -89,4 +89,50 @@ describe('exiv2', function(){
       });
     });
   });
+
+  describe('.getImagePreviews()', function(){
+    it("should callback with image's previews", function(done) {
+      exiv.getImagePreviews(dir + '/books.jpg', function(err, previews) {
+        should.not.exist(err);
+        previews.should.be.an.instanceof(Array);
+        previews.should.have.lengthOf(1);
+        previews[0].should.have.property('mimeType', 'image/jpeg');
+        previews[0].should.have.property('height', 120);
+        previews[0].should.have.property('width', 160);
+        previews[0].should.have.property('data').with.instanceof(Buffer);
+        previews[0].data.should.have.property('length', 6071);
+        done();
+      });
+    });
+
+    it('should callback with an empty array for files no previews', function(done) {
+      exiv.getImagePreviews(dir + '/damien.jpg', function(err, previews) {
+        should.not.exist(err);
+        previews.should.be.an.instanceof(Array);
+        previews.should.have.lengthOf(0);
+        done();
+      })
+    });
+
+
+    it('should throw if no file path is provided', function() {
+      (function(){
+        exiv.getImagePreviews()
+      }).should.throw();
+    });
+
+    it('should throw if no callback is provided', function() {
+      (function(){
+        exiv.getImagePreviews(dir + '/books.jpg')
+      }).should.throw();
+    });
+
+    it('should report an error on an invalid path', function(done) {
+      exiv.getImagePreviews('idontexist.jpg', function(err, previews) {
+        should.exist(err);
+        should.not.exist(previews);
+        done();
+      });
+    });
+  });
 })

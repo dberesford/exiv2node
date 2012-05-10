@@ -1,10 +1,12 @@
 #include <v8.h>
 #include <node.h>
+#include <node_buffer.h>
 #include <unistd.h>
 #include <string>
 #include <map>
 #include <exiv2/image.hpp>
 #include <exiv2/exif.hpp>
+#include <exiv2/preview.hpp>
 
 using namespace node;
 using namespace v8;
@@ -45,10 +47,70 @@ struct SetTagsBaton : Baton {
   }
 };
 
+// Holds a preview image when we copy it from the worker to V8.
+struct Preview {
+  std::string mimeType;
+  uint32_t height;
+  uint32_t width;
+  char* data;
+  size_t size;
+
+  Preview(std::string type_, uint32_t height_, uint32_t width_, const char *data_, size_t size_)
+    : mimeType(type_), height(height_), width(width_), size(size_)
+  {
+    data = new char[size_];
+    memcpy(data, data_, size_);
+  }
+  virtual ~Preview() {
+    delete[] data;
+  }
+};
+
+struct GetPreviewBaton : Baton {
+  Preview **previews;
+  size_t size;
+
+  GetPreviewBaton(Local<String> fn_, Handle<Function> cb_)
+    : Baton(fn_, cb_), previews(0), size(0)
+  {}
+  virtual ~GetPreviewBaton() {
+    for (size_t i = 0; i < size; ++i) {
+      delete previews[i];
+    }
+    delete previews;
+  }
+};
+
+/**
+ * Create a Buffer object from raw data.
+ *
+ * Based on code from: http://sambro.is-super-awesome.com/tag/slowbuffer/
+ */
+static Local<Object> makeBuffer(char* data, size_t size) {
+  HandleScope scope;
+
+  // It ends up being kind of a pain to convert a slow buffer into a fast
+  // one since the fast part is implemented in JavaScript.
+  Local<Buffer> slowBuffer = Buffer::New(data, size);
+  // First get the Buffer from global scope...
+  Local<Object> global = Context::GetCurrent()->Global();
+  Local<Value> bv = global->Get(String::NewSymbol("Buffer"));
+  assert(bv->IsFunction());
+  Local<Function> b = Local<Function>::Cast(bv);
+  // ...call Buffer() with the slow buffer, its size and the starting offset...
+  Handle<Value> argv[3] = { slowBuffer->handle_, Integer::New(size), Integer::New(0) };
+  Local<Object> fastBuffer = b->NewInstance(3, argv);
+
+  // ...and get a fast buffer that we can return.
+  return scope.Close(fastBuffer);
+}
+
 static void GetImageTagsWorker(uv_work_t* req);
 static void AfterGetImageTags(uv_work_t* req);
 static void SetImageTagsWorker(uv_work_t *req);
 static void AfterSetImageTags(uv_work_t *req);
+static void GetImagePreviewsWorker(uv_work_t* req);
+static void AfterGetImagePreviews(uv_work_t* req);
 
 static Handle<Value> GetImageTags(const Arguments& args) {
   HandleScope scope;
@@ -194,9 +256,8 @@ static void AfterSetImageTags(uv_work_t *req) {
   HandleScope scope;
   SetTagsBaton *thread_data = static_cast<SetTagsBaton*> (req->data);
 
+  // Create an argument array for any errors.
   Local<Value> argv[1];
-
-  /* Create a V8 array with all the image tags and their corresponding values */
   if (thread_data->exifException.empty()) {
     argv[0] = Local<Value>::New(Null());
   } else {
@@ -213,8 +274,99 @@ static void AfterSetImageTags(uv_work_t *req) {
   delete thread_data;
 }
 
+
+// Fetch preview images
+static Handle<Value> GetImagePreviews(const Arguments& args) {
+  HandleScope scope;
+
+  // Usage arguments
+  if (args.Length() <= (1) || !args[1]->IsFunction())
+    return ThrowException(Exception::TypeError(String::New("Usage: <filename> <callback function>")));
+
+  Local<String> fileName = Local<String>::Cast(args[0]);
+  Local<Function> cb = Local<Function>::Cast(args[1]);
+
+  // Set up our thread data struct, pass off to the libuv thread pool.
+  GetPreviewBaton *thread_data = new GetPreviewBaton(fileName, cb);
+
+  int status = uv_queue_work(uv_default_loop(), &thread_data->request, GetImagePreviewsWorker, AfterGetImagePreviews);
+  assert(status == 0);
+
+  return Undefined();
+}
+
+// Extract the previews and copy them into the baton.
+static void GetImagePreviewsWorker(uv_work_t *req) {
+  GetPreviewBaton *thread_data = static_cast<GetPreviewBaton*> (req->data);
+
+  try {
+    thread_data->image = Exiv2::ImageFactory::open(thread_data->fileName);
+    assert(thread_data->image.get() != 0);
+    thread_data->image->readMetadata();
+
+    Exiv2::PreviewManager manager(*thread_data->image);
+    Exiv2::PreviewPropertiesList list = manager.getPreviewProperties();
+
+    // Make sure we're not reusing a baton with memory allocated.
+    assert(thread_data->previews == 0);
+    assert(thread_data->size == 0);
+
+    thread_data->size = list.size();
+    thread_data->previews = new Preview*[thread_data->size];
+
+    int i = 0;
+    for (Exiv2::PreviewPropertiesList::iterator pos = list.begin(); pos != list.end(); pos++) {
+      Exiv2::PreviewImage image = manager.getPreviewImage(*pos);
+
+      thread_data->previews[i++] = new Preview(pos->mimeType_, pos->height_,
+        pos->width_, (char*) image.pData(), pos->size_);
+    }
+  } catch (Exiv2::AnyError& e) {
+    thread_data->exifException.append(e.what());
+  }
+}
+
+// Convert the previews from the baton into V8 objects and fire the callback.
+static void AfterGetImagePreviews(uv_work_t *req) {
+  HandleScope scope;
+  GetPreviewBaton *thread_data = static_cast<GetPreviewBaton*> (req->data);
+
+  Local<Value> argv[2];
+  if (!thread_data->exifException.empty()){
+    argv[0] = Local<String>::New(String::New(thread_data->exifException.c_str()));
+    argv[1] = Local<Value>::New(Null());
+  } else {
+    // Convert the data into V8 values.
+    Local<Array> previews = Array::New(thread_data->size);
+    for (size_t i = 0; i < thread_data->size; ++i) {
+      Preview *p = thread_data->previews[i];
+
+      Local<Object> preview = Object::New();
+      preview->Set(String::New("mimeType"), String::New(p->mimeType.c_str()));
+      preview->Set(String::New("height"), Number::New(p->height));
+      preview->Set(String::New("width"), Number::New(p->width));
+      preview->Set(String::New("data"), makeBuffer(p->data, p->size));
+
+      previews->Set(i, preview);
+    }
+
+    argv[0] = Local<Value>::New(Null());
+    argv[1] = previews;
+  }
+
+  // Pass the argv array object to our callback function.
+  TryCatch try_catch;
+  thread_data->cb->Call(Context::GetCurrent()->Global(), 2, argv);
+  if (try_catch.HasCaught()) {
+    FatalException(try_catch);
+  }
+
+  delete thread_data;
+}
+
 void InitAll(Handle<Object> target) {
   target->Set(String::NewSymbol("getImageTags"), FunctionTemplate::New(GetImageTags)->GetFunction());
   target->Set(String::NewSymbol("setImageTags"), FunctionTemplate::New(SetImageTags)->GetFunction());
+  target->Set(String::NewSymbol("getImagePreviews"), FunctionTemplate::New(GetImagePreviews)->GetFunction());
 }
 NODE_MODULE(exiv2, InitAll)
