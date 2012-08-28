@@ -7,8 +7,8 @@ asynchronous support for reading & writing image metadata via
 
 ## Dependencies
 
-To build this addon you'll need the Exiv2 library and headers, see
-[their download page](http://www.exiv2.org/download.html) for more information.
+To build this addon you'll need the Exiv2 library and headers. On Debian/Ubuntu, `sudo apt-get install exiv2 libexiv2-dev`. See the 
+[Exiv2 download page](http://www.exiv2.org/download.html) for more information.
 
 The tests are written using [Mocha](https://github.com/visionmedia/mocha) and
 [Should](https://github.com/visionmedia/should.js).

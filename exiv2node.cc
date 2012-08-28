@@ -1,6 +1,7 @@
 #include <v8.h>
 #include <node.h>
 #include <node_buffer.h>
+#include <node_version.h>
 #include <unistd.h>
 #include <string>
 #include <map>
@@ -14,6 +15,7 @@ using namespace v8;
 // Create a map of strings for passing them back and forth between the V8 and
 // worker threads.
 typedef std::map<std::string, std::string> tag_map_t;
+uv_async_t g_async;
 
 // Base structure for passing data to and from our libuv workers.
 struct Baton {
@@ -24,7 +26,11 @@ struct Baton {
   tag_map_t *tags;
 
   Baton(Local<String> fn_, Handle<Function> cb_) {
+#if NODE_VERSION_AT_LEAST(0, 7, 9)
+    uv_ref((uv_handle_t *) & g_async);
+#else
     uv_ref(uv_default_loop());
+#endif
     request.data = this;
     cb = Persistent<Function>::New(cb_);
     fileName = std::string(*String::AsciiValue(fn_));
@@ -32,7 +38,11 @@ struct Baton {
     tags = new tag_map_t();
   }
   virtual ~Baton() {
-    uv_unref(uv_default_loop());
+#if NODE_VERSION_AT_LEAST(0, 7, 9)
+    uv_unref((uv_handle_t *) & g_async);
+#else
+     uv_unref(uv_default_loop());
+#endif
     cb.Dispose();
     delete tags;
   }
