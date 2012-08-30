@@ -1,17 +1,13 @@
 
 #Exiv2
 
-Exiv2 is a native c++ extension for [node.js](http://nodejs.org/) that provides
-asynchronous support for reading & writing image metadata via
-[Exiv2 library](http://www.exiv2.org).
+Exiv2 is a native c++ extension for [node.js](http://nodejs.org/) that provides support for reading & writing image metadata via [Exiv2 library](http://www.exiv2.org).
 
 ## Dependencies
 
-To build this addon you'll need the Exiv2 library and headers. On Debian/Ubuntu, `sudo apt-get install exiv2 libexiv2-dev`. See the 
-[Exiv2 download page](http://www.exiv2.org/download.html) for more information.
+To build this addon you'll need the Exiv2 library and headers. On Debian/Ubuntu, `sudo apt-get install exiv2 libexiv2-dev`. See the [Exiv2 download page](http://www.exiv2.org/download.html) for more information.
 
-The tests are written using [Mocha](https://github.com/visionmedia/mocha) and
-[Should](https://github.com/visionmedia/should.js).
+The tests are written using [Mocha](https://github.com/visionmedia/mocha) and [Should](https://github.com/visionmedia/should.js).
 
 ## Installation Instructions
 
