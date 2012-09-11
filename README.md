@@ -15,7 +15,8 @@ The tests are written using [Mocha](https://github.com/visionmedia/mocha) and [S
 Install the library and headers using package manager appropriate to your system:
 
   - Debian: `apt-get install libexiv2 libexiv2-dev`
-  - OS X: `port install exiv2`
+  - OS X MacPorts: `port install pkgconfig exiv2`
+  - OS X Homebrew: `brew install pkg-config exiv2`
 
 Install the module with npm:
 
