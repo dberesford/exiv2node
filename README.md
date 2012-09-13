@@ -2,25 +2,46 @@
 
 #Exiv2
 
-Exiv2 is a native c++ extension for [node.js](http://nodejs.org/) that provides support for reading & writing image metadata via [Exiv2 library](http://www.exiv2.org).
+Exiv2 is a native c++ extension for [node.js](http://nodejs.org/) that provides
+support for reading and writing image metadata via the [Exiv2 library](http://www.exiv2.org).
 
 ## Dependencies
 
-To build this addon you'll need the Exiv2 library and headers. On Debian/Ubuntu, `sudo apt-get install exiv2 libexiv2-dev`. See the [Exiv2 download page](http://www.exiv2.org/download.html) for more information.
+To build this addon you'll need the Exiv2 library and headers so if you're using
+a package manager you might need to install an additional "-dev" packages.
 
-The tests are written using [Mocha](https://github.com/visionmedia/mocha) and [Should](https://github.com/visionmedia/should.js).
+### Debian
+
+    apt-get install libexiv2 libexiv2-dev
+
+### OS X
+
+You'll also need to install pkg-config to help locate the library and headers.
+
+[MacPorts](http://macports.org/):
+
+    port install pkgconfig exiv2
+
+[Homebrew](http://github.com/mxcl/homebrew/):
+
+    brew install pkg-config exiv2
+
+### Other systems
+
+See the [Exiv2 download page](http://www.exiv2.org/download.html) for more
+information.
 
 ## Installation Instructions
 
-Install the library and headers using package manager appropriate to your system:
-
-  - Debian: `apt-get install libexiv2 libexiv2-dev`
-  - OS X MacPorts: `port install pkgconfig exiv2`
-  - OS X Homebrew: `brew install pkg-config exiv2`
-
-Install the module with npm:
+Once the dependencies are in place, you can build and install the module using
+npm:
 
     npm install exiv2
+
+You can verify that everything is installed and operating correctly by running
+the tests:
+
+    npm test
 
 ## Sample Usage
 
@@ -55,7 +76,7 @@ Install the module with npm:
       "Exif.Photo.UserComment" : "Some Comment..",
       "Exif.Canon.OwnerName" : "My Camera"
     };
-    ex.setImageTags('./photo.jpg', , function(err){
+    ex.setImageTags('./photo.jpg', newTags, function(err){
       if (err) {
         console.log(err);
       } else {
