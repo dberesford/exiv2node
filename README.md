@@ -1,3 +1,4 @@
+[![build status](https://secure.travis-ci.org/dberesford/exiv2node.png)](http://travis-ci.org/dberesford/exiv2node)
 
 #Exiv2
 
