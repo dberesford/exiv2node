@@ -11,6 +11,9 @@
       'cflags': [
         '<!@(pkg-config --cflags exiv2)'
       ],
+      'cflags_cc': [
+        '-fexceptions'
+      ],
       'libraries': [
         '<!@(pkg-config --libs exiv2)'
       ],
