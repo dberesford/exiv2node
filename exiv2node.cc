@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <string>
 #include <map>
+#include <exception>
 #include <exiv2/image.hpp>
 #include <exiv2/exif.hpp>
 #include <exiv2/preview.hpp>
@@ -160,7 +161,7 @@ static void GetImageTagsWorker(uv_work_t* req) {
         thread_data->tags->insert(std::pair<std::string, std::string> (i->key(), i->value().toString()));
       }
     }
-  } catch (Exiv2::AnyError& e) {
+  } catch (std::exception& e) {
     thread_data->exifException.append(e.what());
   }
 }
@@ -237,7 +238,7 @@ static void SetImageTagsWorker(uv_work_t *req) {
     // Write the Exif data to the image file.
     image->setExifData(exifData);
     image->writeMetadata();
-  } catch (Exiv2::AnyError& e) {
+  } catch (std::exception& e) {
     thread_data->exifException.append(e.what());
   }
 }
@@ -307,7 +308,7 @@ static void GetImagePreviewsWorker(uv_work_t *req) {
       thread_data->previews[i++] = new Preview(pos->mimeType_, pos->height_,
         pos->width_, (char*) image.pData(), pos->size_);
     }
-  } catch (Exiv2::AnyError& e) {
+  } catch (std::exception& e) {
     thread_data->exifException.append(e.what());
   }
 }
