@@ -53,7 +53,9 @@ describe('exiv2', function(){
     it('should write tags to image files', function(done) {
       var tags = {
         "Exif.Photo.UserComment" : "Some books..",
-        "Exif.Canon.OwnerName" : "Damo's camera"
+        "Exif.Canon.OwnerName" : "Damo's camera",
+        "Iptc.Application2.RecordVersion" : "2",
+        "Xmp.dc.subject" : "A camera",
       };
       exiv.setImageTags(temp, tags, function(err){
         should.not.exist(err);
@@ -61,6 +63,8 @@ describe('exiv2', function(){
         exiv.getImageTags(temp, function(err, tags) {
           tags.should.have.property('Exif.Photo.UserComment', "Some books..");
           tags.should.have.property('Exif.Canon.OwnerName', "Damo's camera");
+          tags.should.have.property('Iptc.Application2.RecordVersion', "2");
+          tags.should.have.property('Xmp.dc.subject', "A camera");
           done();
         });
       });

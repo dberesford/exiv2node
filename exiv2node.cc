@@ -223,20 +223,32 @@ static Handle<Value> SetImageTags(const Arguments& args) {
 static void SetImageTagsWorker(uv_work_t *req) {
   Baton *thread_data = static_cast<Baton*> (req->data);
 
-  // TODO: also handle IPTC and XMP data here.
   try {
     Exiv2::Image::AutoPtr image = Exiv2::ImageFactory::open(thread_data->fileName);
     assert(image.get() != 0);
+
     image->readMetadata();
     Exiv2::ExifData &exifData = image->exifData();
+    Exiv2::IptcData &iptcData = image->iptcData();
+    Exiv2::XmpData &xmpData = image->xmpData();
 
     // Assign the tags.
     for (tag_map_t::iterator i = thread_data->tags->begin(); i != thread_data->tags->end(); ++i) {
-      exifData[i->first].setValue(i->second);
+      if (i->first.compare(0, 5, "Exif.") == 0) {
+        exifData[i->first].setValue(i->second);
+      } else if (i->first.compare(0, 5, "Iptc.") == 0) {
+        iptcData[i->first].setValue(i->second);
+      } else if (i->first.compare(0, 4, "Xmp.") == 0) {
+        xmpData[i->first].setValue(i->second);
+      } else {
+        //std::cerr << "skipping unknown tag " << i->first << std::endl;
+      }
     }
 
-    // Write the Exif data to the image file.
+    // Write the tag data the image file.
     image->setExifData(exifData);
+    image->setIptcData(iptcData);
+    image->setXmpData(xmpData);
     image->writeMetadata();
   } catch (std::exception& e) {
     thread_data->exifException.append(e.what());
