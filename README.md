@@ -1,5 +1,3 @@
-[![build status](https://secure.travis-ci.org/dberesford/exiv2node.png)](http://travis-ci.org/dberesford/exiv2node)
-
 #Exiv2
 
 Exiv2 is a native c++ extension for [node.js](http://nodejs.org/) that provides
