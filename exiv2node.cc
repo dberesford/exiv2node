@@ -108,11 +108,11 @@ static Local<Object> makeBuffer(char* data, size_t size) {
 }
 
 static void GetImageTagsWorker(uv_work_t* req);
-static void AfterGetImageTags(uv_work_t* req);
+static void AfterGetImageTags(uv_work_t* req, int status);
 static void SetImageTagsWorker(uv_work_t *req);
-static void AfterSetImageTags(uv_work_t *req);
+static void AfterSetImageTags(uv_work_t* req, int status);
 static void GetImagePreviewsWorker(uv_work_t* req);
-static void AfterGetImagePreviews(uv_work_t* req);
+static void AfterGetImagePreviews(uv_work_t* req, int status);
 
 static Handle<Value> GetImageTags(const Arguments& args) {
   HandleScope scope;
@@ -167,7 +167,7 @@ static void GetImageTagsWorker(uv_work_t* req) {
 }
 
 /* Thread complete callback.. */
-static void AfterGetImageTags(uv_work_t* req) {
+static void AfterGetImageTags(uv_work_t* req, int status) {
   HandleScope scope;
   Baton *thread_data = static_cast<Baton *> (req->data);
 
@@ -256,7 +256,7 @@ static void SetImageTagsWorker(uv_work_t *req) {
 }
 
 /* Thread complete callback.. */
-static void AfterSetImageTags(uv_work_t *req) {
+static void AfterSetImageTags(uv_work_t* req, int status) {
   HandleScope scope;
   Baton *thread_data = static_cast<Baton*> (req->data);
 
@@ -326,7 +326,7 @@ static void GetImagePreviewsWorker(uv_work_t *req) {
 }
 
 // Convert the previews from the baton into V8 objects and fire the callback.
-static void AfterGetImagePreviews(uv_work_t *req) {
+static void AfterGetImagePreviews(uv_work_t* req, int status) {
   HandleScope scope;
   GetPreviewBaton *thread_data = static_cast<GetPreviewBaton*> (req->data);
 
