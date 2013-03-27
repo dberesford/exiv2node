@@ -1,5 +1,6 @@
 var exiv = require('../exiv2')
   , fs = require('fs')
+  , util = require('util')
   , should = require('should')
   , dir = __dirname + '/images';
 
@@ -139,4 +140,36 @@ describe('exiv2', function(){
       });
     });
   });
+
+  describe('.getDate()', function() {
+    var tags = {'Exif.Photo.DateTimeOriginal': '2012:04:14 17:45:52'};
+
+    it("should return a false value if the tag doesn't exist", function() {
+      var d = exiv.getDate({});
+      should.not.exist(d);
+    });
+
+    it("should return a Date", function() {
+      var d = exiv.getDate(tags);
+      should.ok(util.isDate(d));
+    });
+
+    it("should be the correct date and time", function() {
+      var d = exiv.getDate(tags);
+      d.toISOString().should.equal('2012-04-14T17:45:52.000Z');
+    });
+
+    it("should include milliseconds if available", function() {
+      tags['Exif.Photo.SubSecTimeOriginal'] = '99';
+      var d = exiv.getDate(tags);
+      d.toISOString().should.equal('2012-04-14T17:45:52.990Z');
+    });
+
+    it("should use custom tags", function() {
+      tags['Exif.Photo.DateTimeDigitized'] = '2012:04:14 17:08:08';
+      tags['Exif.Photo.SubSecTimeDigitized'] = '88';
+      var d = exiv.getDate(tags, 'Exif.Photo.DateTimeDigitized');
+      d.toISOString().should.equal('2012-04-14T17:08:08.880Z');
+    });
+  })
 })
