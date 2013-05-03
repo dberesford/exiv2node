@@ -124,7 +124,7 @@ static Handle<Value> GetImageTags(const Arguments& args) {
   // Set up our thread data struct, pass off to the libuv thread pool.
   Baton *thread_data = new Baton(Local<String>::Cast(args[0]), Local<Function>::Cast(args[1]));
 
-  int status = uv_queue_work(uv_default_loop(), &thread_data->request, GetImageTagsWorker, AfterGetImageTags);
+  int status = uv_queue_work(uv_default_loop(), &thread_data->request, GetImageTagsWorker, (uv_after_work_cb)AfterGetImageTags);
   assert(status == 0);
 
   return Undefined();
@@ -214,7 +214,7 @@ static Handle<Value> SetImageTags(const Arguments& args) {
     );
   }
 
-  int status = uv_queue_work(uv_default_loop(), &thread_data->request, SetImageTagsWorker, AfterSetImageTags);
+  int status = uv_queue_work(uv_default_loop(), &thread_data->request, SetImageTagsWorker, (uv_after_work_cb)AfterSetImageTags);
   assert(status == 0);
 
   return Undefined();
@@ -288,7 +288,7 @@ static Handle<Value> GetImagePreviews(const Arguments& args) {
   // Set up our thread data struct, pass off to the libuv thread pool.
   GetPreviewBaton *thread_data = new GetPreviewBaton(Local<String>::Cast(args[0]), Local<Function>::Cast(args[1]));
 
-  int status = uv_queue_work(uv_default_loop(), &thread_data->request, GetImagePreviewsWorker, AfterGetImagePreviews);
+  int status = uv_queue_work(uv_default_loop(), &thread_data->request, GetImagePreviewsWorker, (uv_after_work_cb)AfterGetImagePreviews);
   assert(status == 0);
 
   return Undefined();
