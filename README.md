@@ -76,9 +76,25 @@ the tests:
     };
     ex.setImageTags('./photo.jpg', newTags, function(err){
       if (err) {
-        console.log(err);
+        console.error(err);
       } else {
         console.log("setImageTags complete..");
+      }
+    });
+
+### Delete tags:
+
+    var ex = require('exiv2')
+
+    var tagsToDelete = {
+      "Exif.Photo.UserComment" : "Some Comment..",
+      "Exif.Canon.OwnerName" : "My Camera"
+    };
+    ex.deleteImageTags('./photo.jpg', tagsToDelete, function(err){
+      if (err) {
+        console.error(err);
+      } else {
+        console.log("deleteImageTags complete..");
       }
     });
 

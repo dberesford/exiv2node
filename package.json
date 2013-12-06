@@ -1,8 +1,12 @@
 {
-  "author": "Damian Beresford <dberesford@gmail.com> (http://www.damianberesford.com/)",
+  "author": {
+    "name": "Damian Beresford",
+    "email": "dberesford@gmail.com",
+    "url": "http://www.damianberesford.com/"
+  },
   "name": "exiv2",
   "description": "A native c++ extension for node.js that provides support for reading & writing image metadata via Exiv2.",
-  "version": "0.4.2",
+  "version": "0.4.1",
   "homepage": "https://github.com/dberesford/exiv2node",
   "repository": {
     "type": "git",
@@ -20,6 +24,29 @@
   "main": "exiv2",
   "scripts": {
     "preuninstall": "rm -rf build/*",
-    "test": "mocha"
-  }
+    "test": "mocha",
+    "install": "node-gyp rebuild"
+  },
+  "gypfile": true,
+  "contributors": [
+    {
+      "name": "Damian Beresford",
+      "email": "dberesford@gmail.com"
+    },
+    {
+      "name": "Ryan French",
+      "email": "frenchrya@gmail.com"
+    },
+    {
+      "name": "Andrew Morton",
+      "email": "drewish@katherinehouse.com"
+    }
+  ],
+  "readme": "#Exiv2\n\nExiv2 is a native c++ extension for [node.js](http://nodejs.org/) that provides\nsupport for reading and writing image metadata via the [Exiv2 library](http://www.exiv2.org).\n\n## Dependencies\n\nTo build this addon you'll need the Exiv2 library and headers so if you're using\na package manager you might need to install an additional \"-dev\" packages.\n\n### Debian\n\n    apt-get install libexiv2 libexiv2-dev\n\n### OS X\n\nYou'll also need to install pkg-config to help locate the library and headers.\n\n[MacPorts](http://macports.org/):\n\n    port install pkgconfig exiv2\n\n[Homebrew](http://github.com/mxcl/homebrew/):\n\n    brew install pkg-config exiv2\n\n### Other systems\n\nSee the [Exiv2 download page](http://www.exiv2.org/download.html) for more\ninformation.\n\n## Installation Instructions\n\nOnce the dependencies are in place, you can build and install the module using\nnpm:\n\n    npm install exiv2\n\nYou can verify that everything is installed and operating correctly by running\nthe tests:\n\n    npm test\n\n## Sample Usage\n\n### Read tags:\n\n    var ex = require('exiv2');\n\n    ex.getImageTags('./photo.jpg', function(err, tags) {\n      console.log(\"DateTime: \" + tags[\"Exif.Image.DateTime\"]);\n      console.log(\"DateTimeOriginal: \" + tags[\"Exif.Photo.DateTimeOriginal\"]);\n    });\n\n### Load preview images:\n\n    var ex = require('exiv2')\n      , fs = require('fs');\n\n    ex.getImagePreviews('./photo.jpg', function(err, previews) {\n      // Display information about the previews.\n      console.log(previews);\n\n      // Or you can save them--though you'll probably want to check the MIME\n      // type before picking an extension.\n      fs.writeFile('preview.jpg', previews[0].data);\n    });\n\n### Write tags:\n\n    var ex = require('exiv2')\n\n    var newTags = {\n      \"Exif.Photo.UserComment\" : \"Some Comment..\",\n      \"Exif.Canon.OwnerName\" : \"My Camera\"\n    };\n    ex.setImageTags('./photo.jpg', newTags, function(err){\n      if (err) {\n        console.log(err);\n      } else {\n        console.log(\"setImageTags complete..\");\n      }\n    });\n\nTake a look at the `examples/` and `test/` directories for more.\n\nemail: dberesford at gmail\ntwitter: @dberesford\n",
+  "readmeFilename": "README.md",
+  "bugs": {
+    "url": "https://github.com/dberesford/exiv2node/issues"
+  },
+  "_id": "exiv2@0.4.1",
+  "_from": "exiv2@*"
 }

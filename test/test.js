@@ -1,3 +1,4 @@
+
 var exiv = require('../exiv2')
   , fs = require('fs')
   , util = require('util')
@@ -9,7 +10,7 @@ describe('exiv2', function(){
     it("should callback with image's tags", function(done) {
       exiv.getImageTags(dir + '/books.jpg', function(err, tags) {
         should.not.exist(err);
-        tags.should.be.a('object');
+
         tags.should.have.property('Exif.Image.DateTime', '2008:12:16 21:28:36');
         tags.should.have.property('Exif.Photo.DateTimeOriginal', '2008:12:16 21:28:36');
         done();
@@ -56,7 +57,7 @@ describe('exiv2', function(){
         "Exif.Photo.UserComment" : "Some books..",
         "Exif.Canon.OwnerName" : "Damo's camera",
         "Iptc.Application2.RecordVersion" : "2",
-        "Xmp.dc.subject" : "A camera",
+        "Xmp.dc.subject" : "A camera"
       };
       exiv.setImageTags(temp, tags, function(err){
         should.not.exist(err);
@@ -92,6 +93,31 @@ describe('exiv2', function(){
         should.not.exist(tags);
         done();
       });
+    });
+  });
+
+  describe('.deleteImageTags()', function(){
+    var temp = dir + '/copy-deltags.jpg';
+
+    before(function() {
+      fs.writeFileSync(temp, fs.readFileSync(dir + '/books.jpg'));
+    });
+    it('should delete tags in image files', function(done) {
+      var tags = {
+        "Exif.Canon.OwnerName" : "Damo's camera"
+      };
+      exiv.deleteImageTags(temp, tags, function(err){
+        should.not.exist(err);
+
+        exiv.getImageTags(temp, function(err, tags) {
+          should.not.exist(err);
+          tags.should.not.have.property('Exif.Canon.OwnerName');
+          done();
+        });
+      });
+    })
+    after(function(done) {
+      fs.unlink(temp, done);
     });
   });
 

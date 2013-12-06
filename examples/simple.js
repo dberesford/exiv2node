@@ -4,7 +4,7 @@ var fs = require('fs')
 
 var dir = __dirname + '/../test/images';
 
-// Test basic image with exif tags:
+// Example of get image exif tags:
 ex.getImageTags(dir + '/books.jpg', function(err, tags) {
   console.log(tags);
 });
@@ -13,19 +13,34 @@ ex.getImageTags(dir + '/books.jpg', function(err, tags) {
 fs.writeFileSync(dir + '/copy.jpg', fs.readFileSync(dir + '/books.jpg'));
 
 // Set some tags on the image:
-var tags = {
+var newtags = {
   "Exif.Photo.UserComment" : "Some books..",
   "Exif.Canon.OwnerName" : "Damo's camera"
 };
-ex.setImageTags(dir + '/copy.jpg', tags, function(err){
+
+ex.setImageTags(dir + '/copy.jpg', newtags, function(err){
+  assert.ok(!err);
+
   // Check our tags have been set
   ex.getImageTags(dir + '/copy.jpg', function(err, tags) {
+    assert.ok(!err);
     assert.equal("Some books..", tags["Exif.Photo.UserComment"]);
     assert.equal("Damo's camera", tags["Exif.Canon.OwnerName"]);
+
+    // delete image tags
+    ex.deleteImageTags(dir + '/copy.jpg', newtags, function(err) {
+      assert.ok(!err);
+      ex.getImageTags(dir + '/copy.jpg', function(err, tags) {
+        assert.ok(!err);
+        assert.ok(!tags["Exif.Canon.OwnerName"]);
+        assert.ok(!tags["Exif.Photo.UserComment"]);
+      });
+    });
   });
 });
 
-// Load the preview images:
+
+// Example of loading the preview images:
 ex.getImagePreviews(dir + '/books.jpg', function(err, previews) {
   // Display information about the previews.
   console.log("Preview images:");
