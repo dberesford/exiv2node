@@ -103,9 +103,7 @@ describe('exiv2', function(){
       fs.writeFileSync(temp, fs.readFileSync(dir + '/books.jpg'));
     });
     it('should delete tags in image files', function(done) {
-      var tags = {
-        "Exif.Canon.OwnerName" : "Damo's camera"
-      };
+      var tags = ["Exif.Canon.OwnerName"];
       exiv.deleteImageTags(temp, tags, function(err){
         should.not.exist(err);
 

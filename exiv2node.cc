@@ -126,7 +126,7 @@ static Handle<Value> GetImageTags(const Arguments& args) {
   // Set up our thread data struct, pass off to the libuv thread pool.
   Baton *thread_data = new Baton(Local<String>::Cast(args[0]), Local<Function>::Cast(args[1]));
 
-  int status = uv_queue_work(uv_default_loop(), &thread_data->request, GetImageTagsWorker, AfterGetImageTags);
+  int status = uv_queue_work(uv_default_loop(), &thread_data->request, GetImageTagsWorker, (uv_after_work_cb)AfterGetImageTags);
   assert(status == 0);
 
   return Undefined();
@@ -216,7 +216,7 @@ static Handle<Value> SetImageTags(const Arguments& args) {
     );
   }
 
-  int status = uv_queue_work(uv_default_loop(), &thread_data->request, SetImageTagsWorker, AfterSetImageTags);
+  int status = uv_queue_work(uv_default_loop(), &thread_data->request, SetImageTagsWorker, (uv_after_work_cb)AfterSetImageTags);
   assert(status == 0);
 
   return Undefined();
@@ -268,17 +268,17 @@ static Handle<Value> DeleteImageTags(const Arguments& args) {
   // Set up our thread data struct, pass off to the libuv thread pool.
   Baton *thread_data = new Baton(Local<String>::Cast(args[0]), Local<Function>::Cast(args[2]));
 
-  Local<Object> tags = Local<Object>::Cast(args[1]);
-  Local<Array> keys = tags->GetPropertyNames();
-  for (unsigned i = 0; i < keys->Length(); i++) {
-    Handle<v8::Value> key = keys->Get(i);
+  // for simplicity we just reuse the batons 'tags' map here for holding the array of tags to be deleted in the baton
+  Local<Array> tags = Local<Array>::Cast(args[1]);
+  for (unsigned i = 0; i < tags->Length(); i++) {
+    Handle<v8::Value> tag = tags->Get(i);
     thread_data->tags->insert(std::pair<std::string, std::string> (
-      *String::AsciiValue(key),
-      *String::AsciiValue(tags->Get(key)))
+      *String::AsciiValue(tag),
+      *String::AsciiValue(tag))
     );
   }
 
-  int status = uv_queue_work(uv_default_loop(), &thread_data->request, DeleteImageTagsWorker, AfterDeleteImageTags);
+  int status = uv_queue_work(uv_default_loop(), &thread_data->request, DeleteImageTagsWorker, (uv_after_work_cb)AfterDeleteImageTags);
   assert(status == 0);
 
   return Undefined();
@@ -379,7 +379,7 @@ static Handle<Value> GetImagePreviews(const Arguments& args) {
   // Set up our thread data struct, pass off to the libuv thread pool.
   GetPreviewBaton *thread_data = new GetPreviewBaton(Local<String>::Cast(args[0]), Local<Function>::Cast(args[1]));
 
-  int status = uv_queue_work(uv_default_loop(), &thread_data->request, GetImagePreviewsWorker, AfterGetImagePreviews);
+  int status = uv_queue_work(uv_default_loop(), &thread_data->request, GetImagePreviewsWorker, (uv_after_work_cb)AfterGetImagePreviews);
   assert(status == 0);
 
   return Undefined();

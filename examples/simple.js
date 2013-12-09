@@ -9,28 +9,34 @@ ex.getImageTags(dir + '/books.jpg', function(err, tags) {
   console.log(tags);
 });
 
+var image = dir + '/copy.jpg';
+
 // Make a copy of our file so we don't polute the original.
-fs.writeFileSync(dir + '/copy.jpg', fs.readFileSync(dir + '/books.jpg'));
+fs.writeFileSync(image, fs.readFileSync(dir + '/books.jpg'));
 
 // Set some tags on the image:
+var SOMEBOOKS = "Some books..";
+var MYCAMERA = "My Camera";
+
 var newtags = {
-  "Exif.Photo.UserComment" : "Some books..",
-  "Exif.Canon.OwnerName" : "Damo's camera"
+  "Exif.Photo.UserComment" : SOMEBOOKS,
+  "Exif.Canon.OwnerName" : MYCAMERA
 };
 
-ex.setImageTags(dir + '/copy.jpg', newtags, function(err){
+ex.setImageTags(image, newtags, function(err){
   assert.ok(!err);
 
   // Check our tags have been set
-  ex.getImageTags(dir + '/copy.jpg', function(err, tags) {
+  ex.getImageTags(image, function(err, tags) {
     assert.ok(!err);
-    assert.equal("Some books..", tags["Exif.Photo.UserComment"]);
-    assert.equal("Damo's camera", tags["Exif.Canon.OwnerName"]);
+    assert.equal(SOMEBOOKS, tags["Exif.Photo.UserComment"]);
+    assert.equal(MYCAMERA, tags["Exif.Canon.OwnerName"]);
 
     // delete image tags
-    ex.deleteImageTags(dir + '/copy.jpg', newtags, function(err) {
+    var delTags = ["Exif.Photo.UserComment", "Exif.Canon.OwnerName"];
+    ex.deleteImageTags(image, delTags, function(err) {
       assert.ok(!err);
-      ex.getImageTags(dir + '/copy.jpg', function(err, tags) {
+      ex.getImageTags(image, function(err, tags) {
         assert.ok(!err);
         assert.ok(!tags["Exif.Canon.OwnerName"]);
         assert.ok(!tags["Exif.Photo.UserComment"]);
@@ -38,7 +44,6 @@ ex.setImageTags(dir + '/copy.jpg', newtags, function(err){
     });
   });
 });
-
 
 // Example of loading the preview images:
 ex.getImagePreviews(dir + '/books.jpg', function(err, previews) {

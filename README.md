@@ -86,10 +86,7 @@ the tests:
 
     var ex = require('exiv2')
 
-    var tagsToDelete = {
-      "Exif.Photo.UserComment" : "Some Comment..",
-      "Exif.Canon.OwnerName" : "My Camera"
-    };
+    var tagsToDelete = ["Exif.Photo.UserComment", "Exif.Canon.OwnerName"];
     ex.deleteImageTags('./photo.jpg', tagsToDelete, function(err){
       if (err) {
         console.error(err);
