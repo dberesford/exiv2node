@@ -46,7 +46,5 @@
   "readmeFilename": "README.md",
   "bugs": {
     "url": "https://github.com/dberesford/exiv2node/issues"
-  },
-  "_id": "exiv2@0.4.1",
-  "_from": "exiv2@*"
+  }
 }
