@@ -115,6 +115,8 @@ static void GetImagePreviewsWorker(uv_work_t* req);
 static void AfterGetImagePreviews(uv_work_t* req, int status);
 static void DeleteImageTagsWorker(uv_work_t *req);
 static void AfterDeleteImageTags(uv_work_t* req, int status);
+static void GetImageMetaWorker(uv_work_t* req);
+static void AfterGetImageMeta(uv_work_t* req, int status);
 
 static Handle<Value> GetImageTags(const Arguments& args) {
   HandleScope scope;
@@ -170,6 +172,81 @@ static void GetImageTagsWorker(uv_work_t* req) {
 
 /* Thread complete callback.. */
 static void AfterGetImageTags(uv_work_t* req, int status) {
+  HandleScope scope;
+  Baton *thread_data = static_cast<Baton *> (req->data);
+
+  Local<Value> argv[2] = { Local<Value>::New(Null()), Local<Value>::New(Null()) };
+  if (!thread_data->exifException.empty()){
+    argv[0] = Local<String>::New(String::New(thread_data->exifException.c_str()));
+  } else if (!thread_data->tags->empty()) {
+    Local<Object> tags = Object::New();
+    // Copy the tags out.
+    for (tag_map_t::iterator i = thread_data->tags->begin(); i != thread_data->tags->end(); ++i) {
+      tags->Set(String::New(i->first.c_str()), String::New(i->second.c_str()), ReadOnly);
+    }
+    argv[1] = tags;
+  }
+
+  // Pass the argv array object to our callback function.
+  TryCatch try_catch;
+  thread_data->cb->Call(Context::GetCurrent()->Global(), 2, argv);
+  if (try_catch.HasCaught()) {
+    FatalException(try_catch);
+  }
+
+  delete thread_data;
+}
+
+static Handle<Value> GetImageMeta(const Arguments& args) {
+  HandleScope scope;
+
+  /* Usage arguments */
+  if (args.Length() <= (1) || !args[1]->IsFunction())
+    return ThrowException(Exception::TypeError(String::New("Usage: <filename> <callback function>")));
+
+  // Set up our thread data struct, pass off to the libuv thread pool.
+  Baton *thread_data = new Baton(Local<String>::Cast(args[0]), Local<Function>::Cast(args[1]));
+
+  int status = uv_queue_work(uv_default_loop(), &thread_data->request, GetImageMetaWorker, (uv_after_work_cb)AfterGetImageMeta);
+  assert(status == 0);
+
+  return Undefined();
+}
+
+template<class T>
+std::string t_to_string(T i)
+{
+    std::stringstream ss;
+    std::string s;
+    ss << i;
+    s = ss.str();
+
+    return s;
+}
+
+static void GetImageMetaWorker(uv_work_t* req) {
+  Baton *thread_data = static_cast<Baton *> (req->data);
+
+  try {
+    Exiv2::Image::AutoPtr image = Exiv2::ImageFactory::open(thread_data->fileName);
+    assert(image.get() != 0);
+    image->readMetadata();
+
+    // Filesize
+    struct stat buf;
+    stat(thread_data->fileName.c_str(), &buf);
+    thread_data->tags->insert(std::pair<std::string, std::string> ("fileName", thread_data->fileName));
+    thread_data->tags->insert(std::pair<std::string, std::string> ("fileSize", t_to_string(buf.st_size)));
+    thread_data->tags->insert(std::pair<std::string, std::string> ("mimeType", image->mimeType()));
+    thread_data->tags->insert(std::pair<std::string, std::string> ("pixelWidth", t_to_string(image->pixelWidth())));
+    thread_data->tags->insert(std::pair<std::string, std::string> ("pixelHeight", t_to_string(image->pixelHeight())));
+  } catch (std::exception& e) {
+    thread_data->exifException.append(e.what());
+  }
+}
+
+/* Thread complete callback.. */
+static void AfterGetImageMeta(uv_work_t* req, int status) {
   HandleScope scope;
   Baton *thread_data = static_cast<Baton *> (req->data);
 
@@ -456,5 +533,6 @@ void InitAll(Handle<Object> target) {
   target->Set(String::NewSymbol("setImageTags"), FunctionTemplate::New(SetImageTags)->GetFunction());
   target->Set(String::NewSymbol("deleteImageTags"), FunctionTemplate::New(DeleteImageTags)->GetFunction());
   target->Set(String::NewSymbol("getImagePreviews"), FunctionTemplate::New(GetImagePreviews)->GetFunction());
+  target->Set(String::NewSymbol("getImageMeta"), FunctionTemplate::New(GetImageMeta)->GetFunction());
 }
 NODE_MODULE(exiv2, InitAll)

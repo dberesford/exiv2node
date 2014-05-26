@@ -195,5 +195,19 @@ describe('exiv2', function(){
       var d = exiv.getDate(tags, 'Exif.Photo.DateTimeDigitized');
       d.toISOString().should.equal('2012-04-14T17:08:08.880Z');
     });
-  })
+  });
+
+  describe('.getMeta()', function(){
+    it("should callback with image's meta information", function(done) {
+      exiv.getImageMeta(dir + '/books.jpg', function(err, meta) {
+        should.not.exist(err);
+        meta.should.have.property('mimeType', 'image/jpeg');
+        meta.should.have.property('pixelHeight', '1200');
+        done();
+      })
+    });
+  });
+
+
+
 })

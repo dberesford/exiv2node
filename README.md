@@ -10,7 +10,7 @@ a package manager you might need to install an additional "-dev" packages.
 
 ### Debian
 
-    apt-get install libexiv2 libexiv2-dev
+    apt-get install exiv2 libexiv2-dev
 
 ### OS X
 
@@ -94,6 +94,25 @@ the tests:
         console.log("deleteImageTags complete..");
       }
     });
+
+### Meta Information:
+
+    var ex = require('exiv2')
+    ex.getImageMeta('./photo.jpg', function(err, meta){
+    if (err) {
+      console.error(err);
+    } else {
+      console.log("Meta:", meta);
+    }
+
+Meta information looks as follows:
+
+    { fileName: '/path/books.jpg',
+      fileSize: '993738',
+      mimeType: 'image/jpeg',
+      pixelHeight: '1200',
+      pixelWidth: '1600' }
+  
 
 Take a look at the `examples/` and `test/` directories for more.
 
