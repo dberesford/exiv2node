@@ -12,7 +12,9 @@
     "type": "git",
     "url": "git://github.com/dberesford/exiv2node.git"
   },
-  "dependencies": {},
+  "dependencies": {
+    "nan": ">= 1.7.0"
+  },
   "devDependencies": {
     "should": "*",
     "mocha": "*"
