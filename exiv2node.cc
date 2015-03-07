@@ -1,7 +1,7 @@
 #include <v8.h>
 #include <node.h>
 #include <node_buffer.h>
-#include <node_version.h>
+#include <nan.h>
 #include <unistd.h>
 #include <string>
 #include <map>
@@ -16,445 +16,388 @@ using namespace v8;
 // Create a map of strings for passing them back and forth between the V8 and
 // worker threads.
 typedef std::map<std::string, std::string> tag_map_t;
-uv_async_t g_async;
 
-// Base structure for passing data to and from our libuv workers.
-struct Baton {
-  uv_work_t request;
-  Persistent<Function> cb;
-  std::string fileName;
+class Exiv2Worker : public NanAsyncWorker {
+ public:
+  Exiv2Worker(NanCallback *callback, const std::string fileName)
+    : NanAsyncWorker(callback), fileName(fileName) {}
+  ~Exiv2Worker() {}
+
+ protected:
+  const std::string fileName;
   std::string exifException;
-  tag_map_t *tags;
-
-  Baton(Local<String> fn_, Handle<Function> cb_) {
-#if NODE_VERSION_AT_LEAST(0, 7, 9)
-    uv_ref((uv_handle_t *) & g_async);
-#else
-    uv_ref(uv_default_loop());
-#endif
-    request.data = this;
-    cb = Persistent<Function>::New(cb_);
-    fileName = std::string(*String::AsciiValue(fn_));
-    exifException = std::string();
-    tags = new tag_map_t();
-  }
-  virtual ~Baton() {
-#if NODE_VERSION_AT_LEAST(0, 7, 9)
-    uv_unref((uv_handle_t *) & g_async);
-#else
-     uv_unref(uv_default_loop());
-#endif
-    cb.Dispose();
-    delete tags;
-  }
 };
 
-// Holds a preview image when we copy it from the worker to V8.
-struct Preview {
-  std::string mimeType;
-  uint32_t height;
-  uint32_t width;
-  char* data;
-  size_t size;
+// - - -
 
-  Preview(std::string type_, uint32_t height_, uint32_t width_, const char *data_, size_t size_)
-    : mimeType(type_), height(height_), width(width_), size(size_)
-  {
-    data = new char[size_];
-    memcpy(data, data_, size_);
-  }
-  virtual ~Preview() {
-    delete[] data;
-  }
-};
+class GetTagsWorker : public Exiv2Worker {
+ public:
+  GetTagsWorker(NanCallback *callback, const std::string fileName)
+    : Exiv2Worker(callback, fileName) {}
+  ~GetTagsWorker() {}
 
-struct GetPreviewBaton : Baton {
-  Preview **previews;
-  size_t size;
+  // Should become protected...
+  tag_map_t tags;
 
-  GetPreviewBaton(Local<String> fn_, Handle<Function> cb_)
-    : Baton(fn_, cb_), previews(0), size(0)
-  {}
-  virtual ~GetPreviewBaton() {
-    for (size_t i = 0; i < size; ++i) {
-      delete previews[i];
+  // Executed inside the worker-thread. Not safe to access V8, or V8 data
+  // structures here.
+  void Execute () {
+    try {
+      Exiv2::Image::AutoPtr image = Exiv2::ImageFactory::open(fileName);
+      assert(image.get() != 0);
+      image->readMetadata();
+
+      Exiv2::ExifData &exifData = image->exifData();
+      if (exifData.empty() == false) {
+        Exiv2::ExifData::const_iterator end = exifData.end();
+        for (Exiv2::ExifData::const_iterator i = exifData.begin(); i != end; ++i) {
+          tags.insert(std::pair<std::string, std::string> (i->key(), i->value().toString()));
+        }
+      }
+
+      Exiv2::IptcData &iptcData = image->iptcData();
+      if (iptcData.empty() == false) {
+        Exiv2::IptcData::const_iterator end = iptcData.end();
+        for (Exiv2::IptcData::const_iterator i = iptcData.begin(); i != end; ++i) {
+          tags.insert(std::pair<std::string, std::string> (i->key(), i->value().toString()));
+        }
+      }
+
+      Exiv2::XmpData &xmpData = image->xmpData();
+      if (xmpData.empty() == false) {
+        Exiv2::XmpData::const_iterator end = xmpData.end();
+        for (Exiv2::XmpData::const_iterator i = xmpData.begin(); i != end; ++i) {
+          tags.insert(std::pair<std::string, std::string> (i->key(), i->value().toString()));
+        }
+      }
+    } catch (std::exception& e) {
+      exifException.append(e.what());
     }
-    delete previews;
   }
+
+  // This function will be run inside the main event loop so it is safe to use
+  // V8 again.
+  void HandleOKCallback () {
+    NanScope();
+
+    Local<Value> argv[2] = { NanNull(), NanNull() };
+
+    if (!exifException.empty()){
+      argv[0] = NanNew<String>(exifException.c_str());
+    } else if (!tags.empty()) {
+      Local<Object> hash = NanNew<Object>();
+      // Copy the tags out.
+      for (tag_map_t::iterator i = tags.begin(); i != tags.end(); ++i) {
+        hash->Set(NanNew<String>(i->first.c_str()), NanNew<String>(i->second.c_str()));
+      }
+      argv[1] = hash;
+    }
+
+    // Pass the argv array object to our callback function.
+    callback->Call(2, argv);
+  };
 };
 
-/**
- * Create a Buffer object from raw data.
- *
- * Based on code from: http://sambro.is-super-awesome.com/tag/slowbuffer/
- */
-static Local<Object> makeBuffer(char* data, size_t size) {
-  HandleScope scope;
-
-  // It ends up being kind of a pain to convert a slow buffer into a fast
-  // one since the fast part is implemented in JavaScript.
-  Local<Buffer> slowBuffer = Buffer::New(data, size);
-  // First get the Buffer from global scope...
-  Local<Object> global = Context::GetCurrent()->Global();
-  Local<Value> bv = global->Get(String::NewSymbol("Buffer"));
-  assert(bv->IsFunction());
-  Local<Function> b = Local<Function>::Cast(bv);
-  // ...call Buffer() with the slow buffer, its size and the starting offset...
-  Handle<Value> argv[3] = { slowBuffer->handle_, Integer::New(size), Integer::New(0) };
-  Local<Object> fastBuffer = b->NewInstance(3, argv);
-
-  // ...and get a fast buffer that we can return.
-  return scope.Close(fastBuffer);
-}
-
-static void GetImageTagsWorker(uv_work_t* req);
-static void AfterGetImageTags(uv_work_t* req, int status);
-static void SetImageTagsWorker(uv_work_t *req);
-static void AfterSetImageTags(uv_work_t* req, int status);
-static void GetImagePreviewsWorker(uv_work_t* req);
-static void AfterGetImagePreviews(uv_work_t* req, int status);
-static void DeleteImageTagsWorker(uv_work_t *req);
-static void AfterDeleteImageTags(uv_work_t* req, int status);
-
-static Handle<Value> GetImageTags(const Arguments& args) {
-  HandleScope scope;
+NAN_METHOD(GetImageTags) {
+  NanScope();
 
   /* Usage arguments */
-  if (args.Length() <= (1) || !args[1]->IsFunction())
-    return ThrowException(Exception::TypeError(String::New("Usage: <filename> <callback function>")));
+  if (args.Length() <= 1 || !args[1]->IsFunction())
+    return NanThrowTypeError("Usage: <filename> <callback function>");
 
-  // Set up our thread data struct, pass off to the libuv thread pool.
-  Baton *thread_data = new Baton(Local<String>::Cast(args[0]), Local<Function>::Cast(args[1]));
+  NanCallback *callback = new NanCallback(args[1].As<Function>());
+  std::string filename = std::string(*NanUtf8String(args[0]));
 
-  int status = uv_queue_work(uv_default_loop(), &thread_data->request, GetImageTagsWorker, (uv_after_work_cb)AfterGetImageTags);
-  assert(status == 0);
-
-  return Undefined();
+  NanAsyncQueueWorker(new GetTagsWorker(callback, filename));
+  NanReturnUndefined();
 }
 
-static void GetImageTagsWorker(uv_work_t* req) {
-  Baton *thread_data = static_cast<Baton *> (req->data);
+// - - -
 
-  try {
-    Exiv2::Image::AutoPtr image = Exiv2::ImageFactory::open(thread_data->fileName);
-    assert(image.get() != 0);
-    image->readMetadata();
+class SetTagsWorker : public Exiv2Worker {
+ public:
+  SetTagsWorker(NanCallback *callback, const std::string fileName)
+    : Exiv2Worker(callback, fileName) {}
+  ~SetTagsWorker() {}
 
-    Exiv2::ExifData &exifData = image->exifData();
-    if (exifData.empty() == false) {
-      Exiv2::ExifData::const_iterator end = exifData.end();
-      for (Exiv2::ExifData::const_iterator i = exifData.begin(); i != end; ++i) {
-        thread_data->tags->insert(std::pair<std::string, std::string> (i->key(), i->value().toString()));
+  // Should become protected...
+  tag_map_t tags;
+
+  // Executed inside the worker-thread. Not safe to access V8, or V8 data
+  // structures here.
+  void Execute () {
+    try {
+      Exiv2::Image::AutoPtr image = Exiv2::ImageFactory::open(fileName);
+      assert(image.get() != 0);
+
+      image->readMetadata();
+      Exiv2::ExifData &exifData = image->exifData();
+      Exiv2::IptcData &iptcData = image->iptcData();
+      Exiv2::XmpData &xmpData = image->xmpData();
+
+      // Assign the tags.
+      for (tag_map_t::iterator i = tags.begin(); i != tags.end(); ++i) {
+        if (i->first.compare(0, 5, "Exif.") == 0) {
+          exifData[i->first].setValue(i->second);
+        } else if (i->first.compare(0, 5, "Iptc.") == 0) {
+          iptcData[i->first].setValue(i->second);
+        } else if (i->first.compare(0, 4, "Xmp.") == 0) {
+          xmpData[i->first].setValue(i->second);
+        } else {
+          //std::cerr << "skipping unknown tag " << i->first << std::endl;
+        }
       }
-    }
 
-    Exiv2::IptcData &iptcData = image->iptcData();
-    if (iptcData.empty() == false) {
-      Exiv2::IptcData::const_iterator end = iptcData.end();
-      for (Exiv2::IptcData::const_iterator i = iptcData.begin(); i != end; ++i) {
-        thread_data->tags->insert(std::pair<std::string, std::string> (i->key(), i->value().toString()));
-      }
+      // Write the tag data the image file.
+      image->setExifData(exifData);
+      image->setIptcData(iptcData);
+      image->setXmpData(xmpData);
+      image->writeMetadata();
+    } catch (std::exception& e) {
+      exifException.append(e.what());
     }
-
-    Exiv2::XmpData &xmpData = image->xmpData();
-    if (xmpData.empty() == false) {
-      Exiv2::XmpData::const_iterator end = xmpData.end();
-      for (Exiv2::XmpData::const_iterator i = xmpData.begin(); i != end; ++i) {
-        thread_data->tags->insert(std::pair<std::string, std::string> (i->key(), i->value().toString()));
-      }
-    }
-  } catch (std::exception& e) {
-    thread_data->exifException.append(e.what());
-  }
-}
-
-/* Thread complete callback.. */
-static void AfterGetImageTags(uv_work_t* req, int status) {
-  HandleScope scope;
-  Baton *thread_data = static_cast<Baton *> (req->data);
-
-  Local<Value> argv[2] = { Local<Value>::New(Null()), Local<Value>::New(Null()) };
-  if (!thread_data->exifException.empty()){
-    argv[0] = Local<String>::New(String::New(thread_data->exifException.c_str()));
-  } else if (!thread_data->tags->empty()) {
-    Local<Object> tags = Object::New();
-    // Copy the tags out.
-    for (tag_map_t::iterator i = thread_data->tags->begin(); i != thread_data->tags->end(); ++i) {
-      tags->Set(String::New(i->first.c_str()), String::New(i->second.c_str()), ReadOnly);
-    }
-    argv[1] = tags;
   }
 
-  // Pass the argv array object to our callback function.
-  TryCatch try_catch;
-  thread_data->cb->Call(Context::GetCurrent()->Global(), 2, argv);
-  if (try_catch.HasCaught()) {
-    FatalException(try_catch);
-  }
+  // This function will be run inside the main event loop so it is safe to use
+  // V8 again.
+  void HandleOKCallback () {
+    NanScope();
 
-  delete thread_data;
-}
+    // Create an argument array for any errors.
+    Local<Value> argv[1] = { NanNull() };
+    if (!exifException.empty()) {
+      argv[0] = NanNew<String>(exifException.c_str());
+    }
 
-/* Set Image Tag support.. */
-static Handle<Value> SetImageTags(const Arguments& args) {
-  HandleScope scope;
+    // Pass the argv array object to our callback function.
+    callback->Call(1, argv);
+  };
+};
+
+NAN_METHOD(SetImageTags) {
+  NanScope();
 
   /* Usage arguments */
   if (args.Length() <= 2 || !args[2]->IsFunction())
-    return ThrowException(Exception::TypeError(String::New("Usage: <filename> <tags> <callback function>")));
+    return NanThrowTypeError("Usage: <filename> <tags> <callback function>");
 
-  // Set up our thread data struct, pass off to the libuv thread pool.
-  Baton *thread_data = new Baton(Local<String>::Cast(args[0]), Local<Function>::Cast(args[2]));
+  NanCallback *callback = new NanCallback(args[2].As<Function>());
+  std::string filename = std::string(*NanUtf8String(args[0]));
+
+  SetTagsWorker *worker = new SetTagsWorker(callback, filename);
 
   Local<Object> tags = Local<Object>::Cast(args[1]);
   Local<Array> keys = tags->GetPropertyNames();
   for (unsigned i = 0; i < keys->Length(); i++) {
     Handle<v8::Value> key = keys->Get(i);
-    thread_data->tags->insert(std::pair<std::string, std::string> (
-      *String::AsciiValue(key),
-      *String::AsciiValue(tags->Get(key)))
+    worker->tags.insert(std::pair<std::string, std::string> (
+      *NanUtf8String(key),
+      *NanUtf8String(tags->Get(key)))
     );
   }
 
-  int status = uv_queue_work(uv_default_loop(), &thread_data->request, SetImageTagsWorker, (uv_after_work_cb)AfterSetImageTags);
-  assert(status == 0);
-
-  return Undefined();
+  NanAsyncQueueWorker(worker);
+  NanReturnUndefined();
 }
 
-static void SetImageTagsWorker(uv_work_t *req) {
-  Baton *thread_data = static_cast<Baton*> (req->data);
+// - - -
 
-  try {
-    Exiv2::Image::AutoPtr image = Exiv2::ImageFactory::open(thread_data->fileName);
-    assert(image.get() != 0);
+class DeleteTagsWorker : public Exiv2Worker {
+ public:
+  DeleteTagsWorker(NanCallback *callback, const std::string fileName)
+    : Exiv2Worker(callback, fileName) {}
+  ~DeleteTagsWorker() {}
 
-    image->readMetadata();
-    Exiv2::ExifData &exifData = image->exifData();
-    Exiv2::IptcData &iptcData = image->iptcData();
-    Exiv2::XmpData &xmpData = image->xmpData();
+  // Should become protected...
+  std::vector<std::string> tags;
 
-    // Assign the tags.
-    for (tag_map_t::iterator i = thread_data->tags->begin(); i != thread_data->tags->end(); ++i) {
-      if (i->first.compare(0, 5, "Exif.") == 0) {
-        exifData[i->first].setValue(i->second);
-      } else if (i->first.compare(0, 5, "Iptc.") == 0) {
-        iptcData[i->first].setValue(i->second);
-      } else if (i->first.compare(0, 4, "Xmp.") == 0) {
-        xmpData[i->first].setValue(i->second);
-      } else {
-        //std::cerr << "skipping unknown tag " << i->first << std::endl;
+  // Executed inside the worker-thread. Not safe to access V8, or V8 data
+  // structures here.
+  void Execute () {
+    try {
+      Exiv2::Image::AutoPtr image = Exiv2::ImageFactory::open(fileName);
+      assert(image.get() != 0);
+
+      image->readMetadata();
+      Exiv2::ExifData &exifData = image->exifData();
+      Exiv2::IptcData &iptcData = image->iptcData();
+      Exiv2::XmpData &xmpData = image->xmpData();
+
+      // Erase the tags.
+      for (std::vector<std::string>::iterator i = tags.begin(); i != tags.end(); ++i) {
+        if (i->compare(0, 5, "Exif.") == 0) {
+          Exiv2::ExifKey *k = new Exiv2::ExifKey(*i);
+          exifData.erase(exifData.findKey(*k));
+          delete k;
+        } else if (i->compare(0, 5, "Iptc.") == 0) {
+          Exiv2::IptcKey *k = new Exiv2::IptcKey(*i);
+          iptcData.erase(iptcData.findKey(*k));
+          delete k;
+        } else if (i->compare(0, 4, "Xmp.") == 0) {
+          Exiv2::XmpKey *k = new Exiv2::XmpKey(*i);
+          xmpData.erase(xmpData.findKey(*k));
+          delete k;
+        } else {
+          //std::cerr << "skipping unknown tag " << i << std::endl;
+        }
       }
+
+      // Write the tag data the image file.
+      image->setExifData(exifData);
+      image->setIptcData(iptcData);
+      image->setXmpData(xmpData);
+      image->writeMetadata();
+    } catch (std::exception& e) {
+      exifException.append(e.what());
+    }
+  }
+
+  // This function will be run inside the main event loop so it is safe to use
+  // V8 again.
+  void HandleOKCallback () {
+    NanScope();
+
+    // Create an argument array for any errors.
+    Local<Value> argv[1] = { NanNull() };
+    if (!exifException.empty()) {
+      argv[0] = NanNew<String>(exifException.c_str());
     }
 
-    // Write the tag data the image file.
-    image->setExifData(exifData);
-    image->setIptcData(iptcData);
-    image->setXmpData(xmpData);
-    image->writeMetadata();
-  } catch (std::exception& e) {
-    thread_data->exifException.append(e.what());
-  }
-}
+    // Pass the argv array object to our callback function.
+    callback->Call(1, argv);
+  };
+};
 
-/* Delete Image Tag support.. */
-static Handle<Value> DeleteImageTags(const Arguments& args) {
-  HandleScope scope;
+NAN_METHOD(DeleteImageTags) {
+  NanScope();
 
   /* Usage arguments */
   if (args.Length() <= 2 || !args[2]->IsFunction())
-    return ThrowException(Exception::TypeError(String::New("Usage: <filename> <tags> <callback function>")));
+    return NanThrowTypeError("Usage: <filename> <tags> <callback function>");
 
-  // Set up our thread data struct, pass off to the libuv thread pool.
-  Baton *thread_data = new Baton(Local<String>::Cast(args[0]), Local<Function>::Cast(args[2]));
+  NanCallback *callback = new NanCallback(args[2].As<Function>());
+  std::string filename = std::string(*NanUtf8String(args[0]));
 
-  // for simplicity we just reuse the batons 'tags' map here for holding the array of tags to be deleted in the baton
-  Local<Array> tags = Local<Array>::Cast(args[1]);
-  for (unsigned i = 0; i < tags->Length(); i++) {
-    Handle<v8::Value> tag = tags->Get(i);
-    thread_data->tags->insert(std::pair<std::string, std::string> (
-      *String::AsciiValue(tag),
-      *String::AsciiValue(tag))
-    );
+  DeleteTagsWorker *worker = new DeleteTagsWorker(callback, filename);
+
+  Local<Array> keys = Local<Array>::Cast(args[1]);
+  for (unsigned i = 0; i < keys->Length(); i++) {
+    Handle<v8::Value> key = keys->Get(i);
+    worker->tags.push_back(*NanUtf8String(key));
   }
 
-  int status = uv_queue_work(uv_default_loop(), &thread_data->request, DeleteImageTagsWorker, (uv_after_work_cb)AfterDeleteImageTags);
-  assert(status == 0);
-
-  return Undefined();
+  NanAsyncQueueWorker(worker);
+  NanReturnUndefined();
 }
 
-static void DeleteImageTagsWorker(uv_work_t *req) {
-  Baton *thread_data = static_cast<Baton*> (req->data);
+// - - -
 
-  try {
-    Exiv2::Image::AutoPtr image = Exiv2::ImageFactory::open(thread_data->fileName);
-    assert(image.get() != 0);
+class GetPreviewsWorker : public Exiv2Worker {
+ public:
+  GetPreviewsWorker(NanCallback *callback, const std::string fileName)
+    : Exiv2Worker(callback, fileName) {}
+  ~GetPreviewsWorker() {}
 
-    image->readMetadata();
-    Exiv2::ExifData &exifData = image->exifData();
-    Exiv2::IptcData &iptcData = image->iptcData();
-    Exiv2::XmpData &xmpData = image->xmpData();
+  // Executed inside the worker-thread. Not safe to access V8, or V8 data
+  // structures here.
+  void Execute () {
+    try {
+      Exiv2::Image::AutoPtr image = Exiv2::ImageFactory::open(fileName);
+      assert(image.get() != 0);
+      image->readMetadata();
 
-    // Erase the tags.
-    for (tag_map_t::iterator i = thread_data->tags->begin(); i != thread_data->tags->end(); ++i) {
-      if (i->first.compare(0, 5, "Exif.") == 0) {
-        Exiv2::ExifKey *k = new Exiv2::ExifKey(i->first); 
-        exifData.erase(exifData.findKey(*k));
-        delete k;
-      } else if (i->first.compare(0, 5, "Iptc.") == 0) {
-        Exiv2::IptcKey *k = new Exiv2::IptcKey(i->first); 
-        iptcData.erase(iptcData.findKey(*k));
-        delete k;
-      } else if (i->first.compare(0, 4, "Xmp.") == 0) {
-        Exiv2::XmpKey *k = new Exiv2::XmpKey(i->first); 
-        xmpData.erase(xmpData.findKey(*k));
-        delete k;
-      } else {
-        //std::cerr << "skipping unknown tag " << i->first << std::endl;
+      Exiv2::PreviewManager manager(*image);
+      Exiv2::PreviewPropertiesList list = manager.getPreviewProperties();
+
+      // Make sure we're not reusing a baton with memory allocated.
+      for (Exiv2::PreviewPropertiesList::iterator pos = list.begin(); pos != list.end(); pos++) {
+        Exiv2::PreviewImage image = manager.getPreviewImage(*pos);
+
+        previews.push_back(Preview(pos->mimeType_, pos->height_,
+          pos->width_, (char*) image.pData(), pos->size_));
       }
+    } catch (std::exception& e) {
+      exifException.append(e.what());
+    }
+  }
+
+  // This function will be run inside the main event loop so it is safe to use
+  // V8 again.
+  void HandleOKCallback () {
+    NanScope();
+
+    Local<Value> argv[2] = { NanNull(), NanNull() };
+    if (!exifException.empty()){
+      argv[0] = NanNew<String>(exifException.c_str());
+    } else {
+      // Convert the data into V8 values.
+      Local<Array> array = NanNew<Array>(previews.size());
+      for (size_t i = 0; i < previews.size(); ++i) {
+        Local<Object> preview = NanNew<Object>();
+        preview->Set(NanNew<String>("mimeType"), NanNew<String>(previews[i].mimeType.c_str()));
+        preview->Set(NanNew<String>("height"), NanNew<Number>(previews[i].height));
+        preview->Set(NanNew<String>("width"), NanNew<Number>(previews[i].width));
+        preview->Set(NanNew<String>("data"), NanNewBufferHandle(previews[i].data, previews[i].size));
+
+        array->Set(i, preview);
+      }
+      argv[1] = array;
     }
 
-    // Write the tag data the image file.
-    image->setExifData(exifData);
-    image->setIptcData(iptcData);
-    image->setXmpData(xmpData);
-    image->writeMetadata();
-  } catch (std::exception& e) {
-    thread_data->exifException.append(e.what());
-  }
-}
+    // Pass the argv array object to our callback function.
+    callback->Call(2, argv);
+  };
 
-/* Thread complete callback.. */
-static void AfterDeleteImageTags(uv_work_t* req, int status) {
-  HandleScope scope;
-  Baton *thread_data = static_cast<Baton*> (req->data);
+ protected:
 
-  // Create an argument array for any errors.
-  Local<Value> argv[1] = { Local<Value>::New(Null()) };
-  if (!thread_data->exifException.empty()) {
-    argv[0] = Local<String>::New(String::New(thread_data->exifException.c_str()));
-  }
-
-  // Pass the argv array object to our callback function.
-  TryCatch try_catch;
-  thread_data->cb->Call(Context::GetCurrent()->Global(), 1, argv);
-  if (try_catch.HasCaught()) {
-    FatalException(try_catch);
-  }
-
-  delete thread_data;
-}
-
-/* Thread complete callback.. */
-static void AfterSetImageTags(uv_work_t* req, int status) {
-  HandleScope scope;
-  Baton *thread_data = static_cast<Baton*> (req->data);
-
-  // Create an argument array for any errors.
-  Local<Value> argv[1] = { Local<Value>::New(Null()) };
-  if (!thread_data->exifException.empty()) {
-    argv[0] = Local<String>::New(String::New(thread_data->exifException.c_str()));
-  }
-
-  // Pass the argv array object to our callback function.
-  TryCatch try_catch;
-  thread_data->cb->Call(Context::GetCurrent()->Global(), 1, argv);
-  if (try_catch.HasCaught()) {
-    FatalException(try_catch);
-  }
-
-  delete thread_data;
-}
-
-
-// Fetch preview images
-static Handle<Value> GetImagePreviews(const Arguments& args) {
-  HandleScope scope;
-
-  // Usage arguments
-  if (args.Length() <= (1) || !args[1]->IsFunction())
-    return ThrowException(Exception::TypeError(String::New("Usage: <filename> <callback function>")));
-
-  // Set up our thread data struct, pass off to the libuv thread pool.
-  GetPreviewBaton *thread_data = new GetPreviewBaton(Local<String>::Cast(args[0]), Local<Function>::Cast(args[1]));
-
-  int status = uv_queue_work(uv_default_loop(), &thread_data->request, GetImagePreviewsWorker, (uv_after_work_cb)AfterGetImagePreviews);
-  assert(status == 0);
-
-  return Undefined();
-}
-
-// Extract the previews and copy them into the baton.
-static void GetImagePreviewsWorker(uv_work_t *req) {
-  GetPreviewBaton *thread_data = static_cast<GetPreviewBaton*> (req->data);
-
-  try {
-    Exiv2::Image::AutoPtr image = Exiv2::ImageFactory::open(thread_data->fileName);
-    assert(image.get() != 0);
-    image->readMetadata();
-
-    Exiv2::PreviewManager manager(*image);
-    Exiv2::PreviewPropertiesList list = manager.getPreviewProperties();
-
-    // Make sure we're not reusing a baton with memory allocated.
-    assert(thread_data->previews == 0);
-    assert(thread_data->size == 0);
-
-    thread_data->size = list.size();
-    thread_data->previews = new Preview*[thread_data->size];
-
-    int i = 0;
-    for (Exiv2::PreviewPropertiesList::iterator pos = list.begin(); pos != list.end(); pos++) {
-      Exiv2::PreviewImage image = manager.getPreviewImage(*pos);
-
-      thread_data->previews[i++] = new Preview(pos->mimeType_, pos->height_,
-        pos->width_, (char*) image.pData(), pos->size_);
+  // Holds a preview image when we copy it from the worker to V8.
+  struct Preview {
+    Preview(const Preview &p)
+      : mimeType(p.mimeType), height(p.height), width(p.width), size(p.size)
+    {
+      data = new char[size];
+      memcpy(data, p.data, size);
     }
-  } catch (std::exception& e) {
-    thread_data->exifException.append(e.what());
-  }
-}
-
-// Convert the previews from the baton into V8 objects and fire the callback.
-static void AfterGetImagePreviews(uv_work_t* req, int status) {
-  HandleScope scope;
-  GetPreviewBaton *thread_data = static_cast<GetPreviewBaton*> (req->data);
-
-  Local<Value> argv[2] = { Local<Value>::New(Null()), Local<Value>::New(Null()) };
-  if (!thread_data->exifException.empty()){
-    argv[0] = Local<String>::New(String::New(thread_data->exifException.c_str()));
-  } else {
-    // Convert the data into V8 values.
-    Local<Array> previews = Array::New(thread_data->size);
-    for (size_t i = 0; i < thread_data->size; ++i) {
-      Preview *p = thread_data->previews[i];
-
-      Local<Object> preview = Object::New();
-      preview->Set(String::New("mimeType"), String::New(p->mimeType.c_str()));
-      preview->Set(String::New("height"), Number::New(p->height));
-      preview->Set(String::New("width"), Number::New(p->width));
-      preview->Set(String::New("data"), makeBuffer(p->data, p->size));
-
-      previews->Set(i, preview);
+    Preview(std::string type_, uint32_t height_, uint32_t width_, const char *data_, size_t size_)
+      : mimeType(type_), height(height_), width(width_), size(size_)
+    {
+      data = new char[size];
+      memcpy(data, data_, size);
     }
-    argv[1] = previews;
-  }
+    ~Preview() {
+      delete[] data;
+    }
 
-  // Pass the argv array object to our callback function.
-  TryCatch try_catch;
-  thread_data->cb->Call(Context::GetCurrent()->Global(), 2, argv);
-  if (try_catch.HasCaught()) {
-    FatalException(try_catch);
-  }
+    std::string mimeType;
+    uint32_t height;
+    uint32_t width;
+    size_t size;
+    char* data;
+  };
 
-  delete thread_data;
+  std::vector<Preview> previews;
+};
+
+NAN_METHOD(GetImagePreviews) {
+  NanScope();
+
+  /* Usage arguments */
+  if (args.Length() <= 1 || !args[1]->IsFunction())
+    return NanThrowTypeError("Usage: <filename> <callback function>");
+
+  NanCallback *callback = new NanCallback(args[1].As<Function>());
+  std::string filename = std::string(*NanUtf8String(args[0]));
+
+  NanAsyncQueueWorker(new GetPreviewsWorker(callback, filename));
+  NanReturnUndefined();
 }
+
+// - - -
 
 void InitAll(Handle<Object> target) {
-  target->Set(String::NewSymbol("getImageTags"), FunctionTemplate::New(GetImageTags)->GetFunction());
-  target->Set(String::NewSymbol("setImageTags"), FunctionTemplate::New(SetImageTags)->GetFunction());
-  target->Set(String::NewSymbol("deleteImageTags"), FunctionTemplate::New(DeleteImageTags)->GetFunction());
-  target->Set(String::NewSymbol("getImagePreviews"), FunctionTemplate::New(GetImagePreviews)->GetFunction());
+  target->Set(NanNew<String>("getImageTags"), NanNew<FunctionTemplate>(GetImageTags)->GetFunction());
+  target->Set(NanNew<String>("setImageTags"), NanNew<FunctionTemplate>(SetImageTags)->GetFunction());
+  target->Set(NanNew<String>("deleteImageTags"), NanNew<FunctionTemplate>(DeleteImageTags)->GetFunction());
+  target->Set(NanNew<String>("getImagePreviews"), NanNew<FunctionTemplate>(GetImagePreviews)->GetFunction());
 }
 NODE_MODULE(exiv2, InitAll)
