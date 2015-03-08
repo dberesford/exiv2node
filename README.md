@@ -1,7 +1,8 @@
 #Exiv2
 
-Exiv2 is a native c++ extension for [node.js](http://nodejs.org/) that provides
-support for reading and writing image metadata via the [Exiv2 library](http://www.exiv2.org).
+Exiv2 is a native c++ extension for [io.js](https://iojs.org/en/index.html) and
+[node.js](https://nodejs.org/) that provides support for reading and writing
+image metadata via the [Exiv2 library](http://www.exiv2.org).
 
 ## Dependencies
 
