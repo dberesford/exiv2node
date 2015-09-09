@@ -1,8 +1,27 @@
 language: node_js
 node_js:
-  - "0.8"
-  - "0.10"
+  - "4.0"
   - "0.12"
+  - "0.10"
+  - "0.8"
   - "iojs"
+  - "iojs-v2"
+  - "iojs-v1"
+sudo: false
+addons:
+  apt:
+    sources:
+    - ubuntu-toolchain-r-test
+    packages:
+    - g++-4.8
+    - libexiv2-dev
 before_install:
-  - "sudo apt-get install libexiv2-dev"
+  - export CXX=g++-4.8
+  - case ${TRAVIS_NODE_VERSION} in
+        iojs*)
+            echo "Not upgrading npm for iojs."
+            ;;
+        *)
+            npm update -g npm
+            ;;
+    esac

@@ -13,7 +13,7 @@
     "url": "git://github.com/dberesford/exiv2node.git"
   },
   "dependencies": {
-    "nan": "1.x.0"
+    "nan": "~2.0"
   },
   "devDependencies": {
     "should": "*",
