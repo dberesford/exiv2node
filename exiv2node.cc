@@ -17,10 +17,10 @@ using namespace v8;
 // worker threads.
 typedef std::map<std::string, std::string> tag_map_t;
 
-class Exiv2Worker : public NanAsyncWorker {
+class Exiv2Worker : public Nan::AsyncWorker {
  public:
-  Exiv2Worker(NanCallback *callback, const std::string fileName)
-    : NanAsyncWorker(callback), fileName(fileName) {}
+  Exiv2Worker(Nan::Callback *callback, const std::string fileName)
+    : Nan::AsyncWorker(callback), fileName(fileName) {}
   ~Exiv2Worker() {}
 
  protected:
@@ -32,7 +32,7 @@ class Exiv2Worker : public NanAsyncWorker {
 
 class GetTagsWorker : public Exiv2Worker {
  public:
-  GetTagsWorker(NanCallback *callback, const std::string fileName)
+  GetTagsWorker(Nan::Callback *callback, const std::string fileName)
     : Exiv2Worker(callback, fileName) {}
   ~GetTagsWorker() {}
 
@@ -78,17 +78,20 @@ class GetTagsWorker : public Exiv2Worker {
   // This function will be run inside the main event loop so it is safe to use
   // V8 again.
   void HandleOKCallback () {
-    NanScope();
+    Nan::HandleScope scope;
 
-    Local<Value> argv[2] = { NanNull(), NanNull() };
+    Local<Value> argv[2] = { Nan::Null(), Nan::Null() };
 
     if (!exifException.empty()){
-      argv[0] = NanNew<String>(exifException.c_str());
+      argv[0] = Nan::New<String>(exifException.c_str()).ToLocalChecked();
     } else if (!tags.empty()) {
-      Local<Object> hash = NanNew<Object>();
+      Local<Object> hash = Nan::New<Object>();
       // Copy the tags out.
       for (tag_map_t::iterator i = tags.begin(); i != tags.end(); ++i) {
-        hash->Set(NanNew<String>(i->first.c_str()), NanNew<String>(i->second.c_str()));
+        hash->Set(
+          Nan::New<String>(i->first.c_str()).ToLocalChecked(),
+          Nan::New<String>(i->second.c_str()).ToLocalChecked()
+        );
       }
       argv[1] = hash;
     }
@@ -99,24 +102,24 @@ class GetTagsWorker : public Exiv2Worker {
 };
 
 NAN_METHOD(GetImageTags) {
-  NanScope();
+  Nan::HandleScope scope;
 
   /* Usage arguments */
-  if (args.Length() <= 1 || !args[1]->IsFunction())
-    return NanThrowTypeError("Usage: <filename> <callback function>");
+  if (info.Length() <= 1 || !info[1]->IsFunction())
+    return Nan::ThrowTypeError("Usage: <filename> <callback function>");
 
-  NanCallback *callback = new NanCallback(args[1].As<Function>());
-  std::string filename = std::string(*NanUtf8String(args[0]));
+  Nan::Callback *callback = new Nan::Callback(info[1].As<Function>());
+  std::string filename = std::string(*Nan::Utf8String(info[0]));
 
-  NanAsyncQueueWorker(new GetTagsWorker(callback, filename));
-  NanReturnUndefined();
+  Nan::AsyncQueueWorker(new GetTagsWorker(callback, filename));
+  return;
 }
 
 // - - -
 
 class SetTagsWorker : public Exiv2Worker {
  public:
-  SetTagsWorker(NanCallback *callback, const std::string fileName)
+  SetTagsWorker(Nan::Callback *callback, const std::string fileName)
     : Exiv2Worker(callback, fileName) {}
   ~SetTagsWorker() {}
 
@@ -161,12 +164,12 @@ class SetTagsWorker : public Exiv2Worker {
   // This function will be run inside the main event loop so it is safe to use
   // V8 again.
   void HandleOKCallback () {
-    NanScope();
+    Nan::HandleScope scope;
 
     // Create an argument array for any errors.
-    Local<Value> argv[1] = { NanNull() };
+    Local<Value> argv[1] = { Nan::Null() };
     if (!exifException.empty()) {
-      argv[0] = NanNew<String>(exifException.c_str());
+      argv[0] = Nan::New<String>(exifException.c_str()).ToLocalChecked();
     }
 
     // Pass the argv array object to our callback function.
@@ -175,36 +178,36 @@ class SetTagsWorker : public Exiv2Worker {
 };
 
 NAN_METHOD(SetImageTags) {
-  NanScope();
+  Nan::HandleScope scope;
 
   /* Usage arguments */
-  if (args.Length() <= 2 || !args[2]->IsFunction())
-    return NanThrowTypeError("Usage: <filename> <tags> <callback function>");
+  if (info.Length() <= 2 || !info[2]->IsFunction())
+    return Nan::ThrowTypeError("Usage: <filename> <tags> <callback function>");
 
-  NanCallback *callback = new NanCallback(args[2].As<Function>());
-  std::string filename = std::string(*NanUtf8String(args[0]));
+  Nan::Callback *callback = new Nan::Callback(info[2].As<Function>());
+  std::string filename = std::string(*Nan::Utf8String(info[0]));
 
   SetTagsWorker *worker = new SetTagsWorker(callback, filename);
 
-  Local<Object> tags = Local<Object>::Cast(args[1]);
-  Local<Array> keys = tags->GetPropertyNames();
+  Local<Object> tags = Local<Object>::Cast(info[1]);
+  Local<Array> keys = Nan::GetOwnPropertyNames(tags).ToLocalChecked();
   for (unsigned i = 0; i < keys->Length(); i++) {
-    Handle<v8::Value> key = keys->Get(i);
+    Local<Value> key = keys->Get(i);
     worker->tags.insert(std::pair<std::string, std::string> (
-      *NanUtf8String(key),
-      *NanUtf8String(tags->Get(key)))
-    );
+      *Nan::Utf8String(key),
+      *Nan::Utf8String(tags->Get(key))
+    ));
   }
 
-  NanAsyncQueueWorker(worker);
-  NanReturnUndefined();
+  Nan::AsyncQueueWorker(worker);
+  return;
 }
 
 // - - -
 
 class DeleteTagsWorker : public Exiv2Worker {
  public:
-  DeleteTagsWorker(NanCallback *callback, const std::string fileName)
+  DeleteTagsWorker(Nan::Callback *callback, const std::string fileName)
     : Exiv2Worker(callback, fileName) {}
   ~DeleteTagsWorker() {}
 
@@ -255,12 +258,12 @@ class DeleteTagsWorker : public Exiv2Worker {
   // This function will be run inside the main event loop so it is safe to use
   // V8 again.
   void HandleOKCallback () {
-    NanScope();
+    Nan::HandleScope scope;
 
     // Create an argument array for any errors.
-    Local<Value> argv[1] = { NanNull() };
+    Local<Value> argv[1] = { Nan::Null() };
     if (!exifException.empty()) {
-      argv[0] = NanNew<String>(exifException.c_str());
+      argv[0] = Nan::New<String>(exifException.c_str()).ToLocalChecked();
     }
 
     // Pass the argv array object to our callback function.
@@ -269,32 +272,32 @@ class DeleteTagsWorker : public Exiv2Worker {
 };
 
 NAN_METHOD(DeleteImageTags) {
-  NanScope();
+  Nan::HandleScope scope;
 
   /* Usage arguments */
-  if (args.Length() <= 2 || !args[2]->IsFunction())
-    return NanThrowTypeError("Usage: <filename> <tags> <callback function>");
+  if (info.Length() <= 2 || !info[2]->IsFunction())
+    return Nan::ThrowTypeError("Usage: <filename> <tags> <callback function>");
 
-  NanCallback *callback = new NanCallback(args[2].As<Function>());
-  std::string filename = std::string(*NanUtf8String(args[0]));
+  Nan::Callback *callback = new Nan::Callback(info[2].As<Function>());
+  std::string filename = std::string(*Nan::Utf8String(info[0]));
 
   DeleteTagsWorker *worker = new DeleteTagsWorker(callback, filename);
 
-  Local<Array> keys = Local<Array>::Cast(args[1]);
+  Local<Array> keys = Local<Array>::Cast(info[1]);
   for (unsigned i = 0; i < keys->Length(); i++) {
-    Handle<v8::Value> key = keys->Get(i);
-    worker->tags.push_back(*NanUtf8String(key));
+    Local<v8::Value> key = keys->Get(i);
+    worker->tags.push_back(*Nan::Utf8String(key));
   }
 
-  NanAsyncQueueWorker(worker);
-  NanReturnUndefined();
+  Nan::AsyncQueueWorker(worker);
+  return;
 }
 
 // - - -
 
 class GetPreviewsWorker : public Exiv2Worker {
  public:
-  GetPreviewsWorker(NanCallback *callback, const std::string fileName)
+  GetPreviewsWorker(Nan::Callback *callback, const std::string fileName)
     : Exiv2Worker(callback, fileName) {}
   ~GetPreviewsWorker() {}
 
@@ -324,20 +327,20 @@ class GetPreviewsWorker : public Exiv2Worker {
   // This function will be run inside the main event loop so it is safe to use
   // V8 again.
   void HandleOKCallback () {
-    NanScope();
+    Nan::HandleScope scope;
 
-    Local<Value> argv[2] = { NanNull(), NanNull() };
+    Local<Value> argv[2] = { Nan::Null(), Nan::Null() };
     if (!exifException.empty()){
-      argv[0] = NanNew<String>(exifException.c_str());
+      argv[0] = Nan::New<String>(exifException.c_str()).ToLocalChecked();
     } else {
       // Convert the data into V8 values.
-      Local<Array> array = NanNew<Array>(previews.size());
+      Local<Array> array = Nan::New<Array>(previews.size());
       for (size_t i = 0; i < previews.size(); ++i) {
-        Local<Object> preview = NanNew<Object>();
-        preview->Set(NanNew<String>("mimeType"), NanNew<String>(previews[i].mimeType.c_str()));
-        preview->Set(NanNew<String>("height"), NanNew<Number>(previews[i].height));
-        preview->Set(NanNew<String>("width"), NanNew<Number>(previews[i].width));
-        preview->Set(NanNew<String>("data"), NanNewBufferHandle(previews[i].data, previews[i].size));
+        Local<Object> preview = Nan::New<Object>();
+        preview->Set(Nan::New<String>("mimeType").ToLocalChecked(), Nan::New<String>(previews[i].mimeType.c_str()).ToLocalChecked());
+        preview->Set(Nan::New<String>("height").ToLocalChecked(), Nan::New<Number>(previews[i].height));
+        preview->Set(Nan::New<String>("width").ToLocalChecked(), Nan::New<Number>(previews[i].width));
+        preview->Set(Nan::New<String>("data").ToLocalChecked(), Nan::CopyBuffer(previews[i].data, previews[i].size).ToLocalChecked());
 
         array->Set(i, preview);
       }
@@ -379,25 +382,25 @@ class GetPreviewsWorker : public Exiv2Worker {
 };
 
 NAN_METHOD(GetImagePreviews) {
-  NanScope();
+  Nan::HandleScope scope;
 
   /* Usage arguments */
-  if (args.Length() <= 1 || !args[1]->IsFunction())
-    return NanThrowTypeError("Usage: <filename> <callback function>");
+  if (info.Length() <= 1 || !info[1]->IsFunction())
+    return Nan::ThrowTypeError("Usage: <filename> <callback function>");
 
-  NanCallback *callback = new NanCallback(args[1].As<Function>());
-  std::string filename = std::string(*NanUtf8String(args[0]));
+  Nan::Callback *callback = new Nan::Callback(info[1].As<Function>());
+  std::string filename = std::string(*Nan::Utf8String(info[0]));
 
-  NanAsyncQueueWorker(new GetPreviewsWorker(callback, filename));
-  NanReturnUndefined();
+  Nan::AsyncQueueWorker(new GetPreviewsWorker(callback, filename));
+  return;
 }
 
 // - - -
 
 void InitAll(Handle<Object> target) {
-  target->Set(NanNew<String>("getImageTags"), NanNew<FunctionTemplate>(GetImageTags)->GetFunction());
-  target->Set(NanNew<String>("setImageTags"), NanNew<FunctionTemplate>(SetImageTags)->GetFunction());
-  target->Set(NanNew<String>("deleteImageTags"), NanNew<FunctionTemplate>(DeleteImageTags)->GetFunction());
-  target->Set(NanNew<String>("getImagePreviews"), NanNew<FunctionTemplate>(GetImagePreviews)->GetFunction());
+  target->Set(Nan::New<String>("getImageTags").ToLocalChecked(), Nan::New<FunctionTemplate>(GetImageTags)->GetFunction());
+  target->Set(Nan::New<String>("setImageTags").ToLocalChecked(), Nan::New<FunctionTemplate>(SetImageTags)->GetFunction());
+  target->Set(Nan::New<String>("deleteImageTags").ToLocalChecked(), Nan::New<FunctionTemplate>(DeleteImageTags)->GetFunction());
+  target->Set(Nan::New<String>("getImagePreviews").ToLocalChecked(), Nan::New<FunctionTemplate>(GetImagePreviews)->GetFunction());
 }
 NODE_MODULE(exiv2, InitAll)
