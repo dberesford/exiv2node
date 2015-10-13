@@ -21,7 +21,7 @@
   },
   "optionalDependencies": {},
   "engines": {
-    "node": ">= 0.9.4"
+    "node": "~0.8.0"
   },
   "main": "exiv2",
   "scripts": {
